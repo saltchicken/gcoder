@@ -5,16 +5,13 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "gcoder"
 version = "0.1.0"
-description = "A Python tool for generating helical hole G-code."
+description = "A Python tool for generating CNC G-code."
 readme = "README.md"
 requires-python = ">=3.7"
-dependencies = [
-    # No external dependencies required based on your __main__.py
-]
+dependencies = []
 
 [project.scripts]
 gcoder = "gcoder.__main__:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
-
