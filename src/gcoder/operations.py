@@ -11,6 +11,8 @@ def cut_helical_hole(writer, cx, cy, tool_dia, hole_dia, depth, step_down, feed_
     
     # Move outward to the start of the circle (Right side)
     writer.feed(x=start_x, y=cy, f=feed_xy)
+
+    writer.feed(z=0.0, f=feed_ramp)
     
     current_z = 0.0
     
