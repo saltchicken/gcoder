@@ -25,8 +25,7 @@ path_radius = (HOLE_DIAMETER - TOOL_DIAMETER) / 2.0
 current_time = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S.%f")
 
 gcode = [
-    "(Exported by Python Helical Generator)",
-    "(Post Processor: NONE)",
+    "(Exported by gcoder)",
     f"(Output Time:{current_time})",
     "(Begin preamble)",
     "G17 G90",
