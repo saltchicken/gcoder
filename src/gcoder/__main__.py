@@ -1,12 +1,20 @@
 import argparse
+import logging
 import os
 import sys
 
 from .core import GCodeWriter
 from .operations import SVGProfileCutter
 
+# Configure standard logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(levelname)s: %(message)s'
+)
+logger = logging.getLogger(__name__)
 
-def main():
+
+def main() -> None:
     parser = argparse.ArgumentParser(
         description="Generate G-Code toolpaths from SVGs.")
 
@@ -59,33 +67,35 @@ def main():
     args = parser.parse_args()
 
     if not os.path.exists(args.svg):
-        print(f"Error: SVG file not found at '{args.svg}'", file=sys.stderr)
+        logger.error(f"SVG file not found at '{args.svg}'")
         sys.exit(1)
 
     # Initialize the core writer
     writer = GCodeWriter(safe_z=args.safe_z)
-    writer.build_preamble(
-        operation_name=f"SVG_Profile_{args.compensation.upper()}")
+    operation_name = f"SVG_Profile_{args.compensation.upper()}"
+    writer.build_preamble(operation_name=operation_name)
 
-    cutter = SVGProfileCutter(writer=writer,
-                              svg_path_file=args.svg,
-                              compensation=args.compensation,
-                              tool_dia=args.tool_dia,
-                              depth=args.depth,
-                              step_down=args.step_down,
-                              feed_xy=args.feed_xy,
-                              feed_ramp=args.feed_ramp)
+    logger.info(f"Processing SVG: {args.svg}")
+    
+    # Generate toolpath using the Class directly (Legacy wrapper removed)
+    cutter = SVGProfileCutter(
+        writer=writer,
+        svg_path_file=args.svg,
+        compensation=args.compensation,
+        tool_dia=args.tool_dia,
+        depth=args.depth,
+        step_down=args.step_down,
+        feed_xy=args.feed_xy,
+        feed_ramp=args.feed_ramp
+    )
     cutter.execute()
 
-
     # Finalize and export
-    writer.build_postamble(
-        operation_name=f"SVG_Profile_{args.compensation.upper()}")
+    writer.build_postamble(operation_name=operation_name)
     writer.save(args.output)
 
-    print(
-        f"Successfully processed profile with '{args.compensation}' alignment.")
-    print(f"Saved G-code toolpath to: {args.output}")
+    logger.info(f"Successfully processed profile with '{args.compensation}' alignment.")
+    logger.info(f"Saved G-code toolpath to: {args.output}")
 
 
 if __name__ == "__main__":
