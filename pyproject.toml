@@ -8,7 +8,7 @@ version = "0.1.0"
 description = "A Python tool for generating CNC G-code."
 readme = "README.md"
 requires-python = ">=3.7"
-dependencies = []
+dependencies = ["numpy", "shapely", "svgpathtools"]
 
 [project.scripts]
 gcoder = "gcoder.__main__:main"
