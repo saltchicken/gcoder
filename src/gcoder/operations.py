@@ -12,6 +12,19 @@ def cut_svg_profile(writer, svg_path_file, compensation, tool_dia, depth, step_d
     doc = Document(svg_path_file)
     paths = doc.paths() # This returns the mathematically flattened paths
     
+    # svgpathtools uses complex numbers (X + Yj). 
+    # For a 100x100 viewBox, the center is X=50, Y=50.
+    pivot_point = 50 + 50j 
+    
+    flipped_paths = []
+    for path in paths:
+        if len(path) > 0:
+            # Translate to origin -> Scale Y by -1 -> Translate back
+            flipped = path.translated(-pivot_point).scaled(1, -1).translated(pivot_point)
+            flipped_paths.append(flipped)
+    paths = flipped_paths
+    # -------------------------------------
+    
     # Calculate offset distance (Tool Radius)
     offset_distance = tool_dia / 2.0
     
