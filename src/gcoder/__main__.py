@@ -1,30 +1,61 @@
 import argparse
-import sys
 import os
+import sys
+
 from .core import GCodeWriter
 from .operations import cut_svg_profile
 
+
 def main():
-    parser = argparse.ArgumentParser(description="Generate G-Code toolpaths from SVGs.")
-    
+    parser = argparse.ArgumentParser(
+        description="Generate G-Code toolpaths from SVGs.")
+
     # SVG profile requirements
-    parser.add_argument('--svg', type=str, required=True, help="Path to the input SVG file")
-    parser.add_argument('--compensation', type=str, default='on', choices=['outside', 'inside', 'on'],
-                        help="Tool compensation position relative to the vector profile")
-    
+    parser.add_argument('--svg',
+                        type=str,
+                        required=True,
+                        help="Path to the input SVG file")
+    parser.add_argument(
+        '--compensation',
+        type=str,
+        default='on',
+        choices=['outside', 'inside', 'on'],
+        help="Tool compensation position relative to the vector profile")
+
     # Tool parameters
-    parser.add_argument('--tool-dia', type=float, default=3.175, help="Tool diameter (mm)")
-    parser.add_argument('--depth', type=float, default=-3.0, help="Final cutting depth (mm)")
-    parser.add_argument('--step-down', type=float, default=1.0, help="Z drop per pass (mm)")
-    
+    parser.add_argument('--tool-dia',
+                        type=float,
+                        default=3.175,
+                        help="Tool diameter (mm)")
+    parser.add_argument('--depth',
+                        type=float,
+                        default=-3.0,
+                        help="Final cutting depth (mm)")
+    parser.add_argument('--step-down',
+                        type=float,
+                        default=1.0,
+                        help="Z drop per pass (mm)")
+
     # Machine speeds
-    parser.add_argument('--feed-xy', type=int, default=1000, help="XY feed rate (mm/min)")
-    parser.add_argument('--feed-ramp', type=int, default=400, help="Plunge feed rate (mm/min)")
-    parser.add_argument('--safe-z', type=float, default=5.0, help="Safe Z clearance (mm)")
-    
+    parser.add_argument('--feed-xy',
+                        type=int,
+                        default=1000,
+                        help="XY feed rate (mm/min)")
+    parser.add_argument('--feed-ramp',
+                        type=int,
+                        default=400,
+                        help="Plunge feed rate (mm/min)")
+    parser.add_argument('--safe-z',
+                        type=float,
+                        default=5.0,
+                        help="Safe Z clearance (mm)")
+
     # Output
-    parser.add_argument('--output', type=str, default="profile_output.nc", help="Output file path")
-    
+    parser.add_argument('--output',
+                        type=str,
+                        default="profile_output.nc",
+                        help="Output file path")
+
     args = parser.parse_args()
 
     if not os.path.exists(args.svg):
@@ -33,26 +64,28 @@ def main():
 
     # Initialize the core writer
     writer = GCodeWriter(safe_z=args.safe_z)
-    writer.build_preamble(operation_name=f"SVG_Profile_{args.compensation.upper()}")
+    writer.build_preamble(
+        operation_name=f"SVG_Profile_{args.compensation.upper()}")
 
     # Generate toolpath
-    cut_svg_profile(
-        writer=writer,
-        svg_path_file=args.svg,
-        compensation=args.compensation,
-        tool_dia=args.tool_dia,
-        depth=args.depth,
-        step_down=args.step_down,
-        feed_xy=args.feed_xy,
-        feed_ramp=args.feed_ramp
-    )
+    cut_svg_profile(writer=writer,
+                    svg_path_file=args.svg,
+                    compensation=args.compensation,
+                    tool_dia=args.tool_dia,
+                    depth=args.depth,
+                    step_down=args.step_down,
+                    feed_xy=args.feed_xy,
+                    feed_ramp=args.feed_ramp)
 
     # Finalize and export
-    writer.build_postamble(operation_name=f"SVG_Profile_{args.compensation.upper()}")
+    writer.build_postamble(
+        operation_name=f"SVG_Profile_{args.compensation.upper()}")
     writer.save(args.output)
-    
-    print(f"Successfully processed profile with '{args.compensation}' alignment.")
+
+    print(
+        f"Successfully processed profile with '{args.compensation}' alignment.")
     print(f"Saved G-code toolpath to: {args.output}")
+
 
 if __name__ == "__main__":
     main()
