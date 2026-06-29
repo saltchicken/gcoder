@@ -12,9 +12,28 @@ def cut_svg_profile(writer, svg_path_file, compensation, tool_dia, depth, step_d
     doc = Document(svg_path_file)
     paths = doc.paths() # This returns the mathematically flattened paths
     
-    # svgpathtools uses complex numbers (X + Yj). 
-    # For a 100x100 viewBox, the center is X=50, Y=50.
-    pivot_point = 50 + 50j 
+    # Extract the root <svg> element
+    root = doc.tree.getroot()
+    viewbox_str = root.get('viewBox')
+    
+    if viewbox_str:
+        # viewBox format is usually "min-x min-y width height", sometimes comma-separated
+        vb_parts = viewbox_str.replace(',', ' ').split()
+        min_x = float(vb_parts[0])
+        min_y = float(vb_parts[1])
+        width = float(vb_parts[2])
+        height = float(vb_parts[3])
+        
+        center_x = min_x + (width / 2.0)
+        center_y = min_y + (height / 2.0)
+    else:
+        # Fallback if viewBox is missing: try to parse raw width/height attributes
+        w_str = root.get('width', '100').replace('mm', '').replace('px', '').replace('%', '')
+        h_str = root.get('height', '100').replace('mm', '').replace('px', '').replace('%', '')
+        center_x = float(w_str) / 2.0
+        center_y = float(h_str) / 2.0
+
+    pivot_point = center_x + center_y * 1j
     
     flipped_paths = []
     for path in paths:
