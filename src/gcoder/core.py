@@ -44,7 +44,7 @@ class GCodeWriter:
             parts.append(f"F{f}")
         self.add_line(' '.join(parts))
 
-    def build_preamble(self, operation_name="Helical_Holes"):
+    def build_preamble(self, operation_name="GCode_Operation"):
         """Inserts the initial setup, tool changes, and safe heights."""
         current_time = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S.%f")
         self.lines.extend([
@@ -59,7 +59,7 @@ class GCodeWriter:
             "G0 Z0.000", f"G0 Z{self.safe_z:.3f}"
         ])
 
-    def build_postamble(self, operation_name="Helical_Holes"):
+    def build_postamble(self, operation_name="GCode_Operation"):
         """Closes out the operation and machine safely."""
         self.lines.extend([
             f"G0 Z{self.safe_z:.3f}", f"(Finish operation: {operation_name})",
