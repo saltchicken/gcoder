@@ -145,7 +145,7 @@ class SVGProfileCutter:
 
 
 # --- Legacy API Wrappers ---
-
+# TODO: Remove need for API Wrapper
 def cut_svg_profile(writer, svg_path_file, compensation, tool_dia, depth, step_down, feed_xy, feed_ramp):
     """Legacy wrapper to maintain compatibility with __main__.py"""
     cutter = SVGProfileCutter(
