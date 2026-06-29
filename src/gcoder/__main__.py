@@ -73,7 +73,9 @@ def main() -> None:
     # Initialize the core writer
     writer = GCodeWriter(safe_z=args.safe_z)
     operation_name = f"SVG_Profile_{args.compensation.upper()}"
-    writer.build_preamble(operation_name=operation_name)
+    
+    # Pass the tool diameter to embed the metadata
+    writer.build_preamble(operation_name=operation_name, tool_dia=args.tool_dia)
 
     logger.info(f"Processing SVG: {args.svg}")
     

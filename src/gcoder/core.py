@@ -45,11 +45,12 @@ class GCodeWriter:
             parts.append(f"F{f}")
         self.add_line(' '.join(parts))
 
-    def build_preamble(self, operation_name: str = "GCode_Operation") -> None:
+    def build_preamble(self, operation_name: str = "GCode_Operation", tool_dia: float = 3.175) -> None:
         """Inserts the initial setup, tool changes, and safe heights."""
         current_time = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S.%f")
         self.lines.extend([
             "(Exported by gcoder)", f"(Output Time:{current_time})",
+            f"(META: TOOL_DIA={tool_dia:.3f})",
             "(Begin preamble)", "G17 G90", "G21", "(Begin operation: Fixture)",
             "(Path: Fixture)", "G54", "(Finish operation: Fixture)",
             "(Begin operation: TC: Endmill)", "(Path: TC: Endmill)",
