@@ -166,22 +166,6 @@ class SVGProfileCutter:
         self.writer.rapid(z=self.writer.safe_z)
 
 
-# --- Legacy API Wrappers ---
-# TODO: Remove need for API Wrapper
-def cut_svg_profile(writer, svg_path_file, compensation, tool_dia, depth,
-                    step_down, feed_xy, feed_ramp):
-    """Legacy wrapper to maintain compatibility with __main__.py"""
-    cutter = SVGProfileCutter(writer=writer,
-                              svg_path_file=svg_path_file,
-                              compensation=compensation,
-                              tool_dia=tool_dia,
-                              depth=depth,
-                              step_down=step_down,
-                              feed_xy=feed_xy,
-                              feed_ramp=feed_ramp)
-    cutter.execute()
-
-
 def cut_helical_hole(writer, cx, cy, tool_dia, hole_dia, depth, step_down,
                      feed_xy, feed_ramp):
     """Calculates and writes a single helical hole to the writer buffer."""

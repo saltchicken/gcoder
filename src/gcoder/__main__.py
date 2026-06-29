@@ -3,7 +3,7 @@ import os
 import sys
 
 from .core import GCodeWriter
-from .operations import cut_svg_profile
+from .operations import SVGProfileCutter
 
 
 def main():
@@ -67,15 +67,16 @@ def main():
     writer.build_preamble(
         operation_name=f"SVG_Profile_{args.compensation.upper()}")
 
-    # Generate toolpath
-    cut_svg_profile(writer=writer,
-                    svg_path_file=args.svg,
-                    compensation=args.compensation,
-                    tool_dia=args.tool_dia,
-                    depth=args.depth,
-                    step_down=args.step_down,
-                    feed_xy=args.feed_xy,
-                    feed_ramp=args.feed_ramp)
+    cutter = SVGProfileCutter(writer=writer,
+                              svg_path_file=args.svg,
+                              compensation=args.compensation,
+                              tool_dia=args.tool_dia,
+                              depth=args.depth,
+                              step_down=args.step_down,
+                              feed_xy=args.feed_xy,
+                              feed_ramp=args.feed_ramp)
+    cutter.execute()
+
 
     # Finalize and export
     writer.build_postamble(
