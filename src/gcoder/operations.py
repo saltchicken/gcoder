@@ -10,40 +10,22 @@ def cut_svg_profile(writer, svg_path_file, compensation, tool_dia, depth, step_d
     """
     # 1. Parse SVG paths and apply all parent <g> transforms
     doc = Document(svg_path_file)
-    paths = doc.paths() # This returns the mathematically flattened paths
+    paths = doc.paths() 
     
-    # Extract the root <svg> element
+    # --- Read viewBox and calculate pivot dynamically ---
     root = doc.tree.getroot()
     viewbox_str = root.get('viewBox')
     
     if viewbox_str:
-        # viewBox format is usually "min-x min-y width height", sometimes comma-separated
         vb_parts = viewbox_str.replace(',', ' ').split()
-        min_x = float(vb_parts[0])
-        min_y = float(vb_parts[1])
-        width = float(vb_parts[2])
-        height = float(vb_parts[3])
-        
-        center_x = min_x + (width / 2.0)
-        center_y = min_y + (height / 2.0)
+        center_x = float(vb_parts[0]) + (float(vb_parts[2]) / 2.0)
+        center_y = float(vb_parts[1]) + (float(vb_parts[3]) / 2.0)
     else:
-        # Fallback if viewBox is missing: try to parse raw width/height attributes
         w_str = root.get('width', '100').replace('mm', '').replace('px', '').replace('%', '')
         h_str = root.get('height', '100').replace('mm', '').replace('px', '').replace('%', '')
         center_x = float(w_str) / 2.0
         center_y = float(h_str) / 2.0
 
-    pivot_point = center_x + center_y * 1j
-    
-    flipped_paths = []
-    for path in paths:
-        if len(path) > 0:
-            # Translate to origin -> Scale Y by -1 -> Translate back
-            flipped = path.translated(-pivot_point).scaled(1, -1).translated(pivot_point)
-            flipped_paths.append(flipped)
-    paths = flipped_paths
-    # -------------------------------------
-    
     # Calculate offset distance (Tool Radius)
     offset_distance = tool_dia / 2.0
     
@@ -53,17 +35,23 @@ def cut_svg_profile(writer, svg_path_file, compensation, tool_dia, depth, step_d
             
         # Convert SVG path segments into sequential XY coordinates
         points = []
-        # Increase steps for smoother curve approximation
         steps = 50 
         for segment in path:
             for t in np.linspace(0, 1, steps, endpoint=False):
                 p = segment.point(t)
-                points.append((p.real, p.imag))
+                
+                # --- FLIP Y HERE AT THE POINT LEVEL ---
+                # To flip Y across center_y: new_y = center_y - (original_y - center_y)
+                # This simplifies to: new_y = 2 * center_y - original_y
+                flipped_y = (2.0 * center_y) - p.imag
+                
+                points.append((p.real, flipped_y))
                 
         # Close path if it looks closed
         if path.isclosed():
             p_end = path[-1].point(1)
-            points.append((p_end.real, p_end.imag))
+            flipped_y_end = (2.0 * center_y) - p_end.imag
+            points.append((p_end.real, flipped_y_end))
             
         if len(points) < 2:
             continue
