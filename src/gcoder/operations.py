@@ -119,7 +119,6 @@ class SVGProfileCutter:
             return geom.parallel_offset(self.offset_distance, side=side)
 
     def _write_ramped_profile(self, tpath: List[Tuple[float, float]], is_closed: bool) -> None:
-        """Generates continuous 3D ramping G-code for a structured point path."""
         if not tpath:
             return
 
@@ -127,6 +126,29 @@ class SVGProfileCutter:
 
         start_x, start_y = tpath[0]
         self.writer.rapid(x=start_x, y=start_y)
+
+        # ---------------------------------------------------------
+        # LASER / PEN MODE (Single Pass, No Ramping)
+        # ---------------------------------------------------------
+        if self.writer.mode in ('laser', 'pen'):
+            # Rapid to focus height (or pen hover height)
+            self.writer.rapid(z=1.0) 
+            
+            # Turn tool on (Laser ON or Pen DOWN)
+            self.writer.tool_on() # NO ARGUMENTS NEEDED HERE
+            
+            # Trace the 2D path
+            for x, y in tpath[1:]:
+                self.writer.feed(x=x, y=y, f=self.feed_xy)
+                
+            # Turn tool off (Laser OFF or Pen UP)
+            self.writer.tool_off()
+            self.writer.rapid(z=self.writer.safe_z)
+            return
+
+        # ---------------------------------------------------------
+        # MILLING MODE (Keep your existing ramping logic below)
+        # ---------------------------------------------------------
         self.writer.rapid(z=1.0)
 
         path_length = sum(np.hypot(tpath[i][0] - tpath[i - 1][0], tpath[i][1] - tpath[i - 1][1]) for i in range(1, len(tpath)))

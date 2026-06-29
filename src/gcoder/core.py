@@ -4,9 +4,12 @@ from typing import List, Optional
 
 class GCodeWriter:
 
-    def __init__(self, safe_z: float = 5.0) -> None:
+    def __init__(self, safe_z: float = 5.0, mode: str = 'mill', intensity: int = 1000, pen_z: float = 0.0) -> None:
         self.lines: List[str] = []
         self.safe_z: float = safe_z
+        self.mode: str = mode 
+        self.intensity: int = intensity
+        self.pen_z: float = pen_z
 
     def add_line(self, line: str) -> None:
         self.lines.append(line)
@@ -54,7 +57,7 @@ class GCodeWriter:
             "(Begin preamble)", "G17 G90", "G21", "(Begin operation: Fixture)",
             "(Path: Fixture)", "G54", "(Finish operation: Fixture)",
             "(Begin operation: TC: Endmill)", "(Path: TC: Endmill)",
-            "(TC: Endmill)", "(Begin toolchange)", "( M6 T1 )", "M3 S10000",
+            "(TC: Endmill)", "(Begin toolchange)", "( M6 T1 )",
             "(Finish operation: TC: Endmill)",
             f"(Begin operation: {operation_name})", f"(Path: {operation_name})",
             f"({operation_name})", f"G0 Z{self.safe_z:.3f}", "G0 X0.000 Y0.000",
@@ -72,3 +75,19 @@ class GCodeWriter:
         """Writes the buffered lines to a file."""
         with open(filename, 'w') as f:
             f.write('\n'.join(self.lines))
+
+    def tool_on(self) -> None:
+        """Activates the tool based on the machine mode."""
+        if self.mode == 'laser':
+            self.add_line(f"M4 S{self.intensity}")
+        elif self.mode == 'mill':
+            self.add_line(f"M3 S{self.intensity}")
+        elif self.mode == 'pen':
+            self.rapid(z=self.pen_z)  # Drop pen to paper
+
+    def tool_off(self) -> None:
+        """Deactivates the tool or lifts it safely."""
+        if self.mode in ['laser', 'mill']:
+            self.add_line("M5")
+        if self.mode == 'pen':
+            self.rapid(z=self.safe_z)  # Lift pen
