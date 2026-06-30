@@ -1,15 +1,13 @@
 import datetime
 from typing import List, Optional
-
+from .tools import ToolStrategy
 
 class GCodeWriter:
 
-    def __init__(self, safe_z: float = 5.0, mode: str = 'mill', intensity: int = 1000, pen_z: float = 0.0) -> None:
+    def __init__(self, tool: ToolStrategy, safe_z: float = 5.0) -> None:
         self.lines: List[str] = []
         self.safe_z: float = safe_z
-        self.mode: str = mode 
-        self.intensity: int = intensity
-        self.pen_z: float = pen_z
+        self.tool: ToolStrategy = tool
 
     def add_line(self, line: str) -> None:
         self.lines.append(line)
@@ -53,7 +51,7 @@ class GCodeWriter:
         current_time = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S.%f")
         self.lines.extend([
             "(Exported by gcoder)", f"(Output Time:{current_time})",
-            f"(META: MODE={self.mode.upper()})",      # <-- Add mode tracking
+            f"(META: MODE={self.tool.name.upper()})",
             f"(META: TOOL_DIA={tool_dia:.3f})",
             "(Begin preamble)", "G17 G90", "G21", "(Begin operation: Fixture)",
             "(Path: Fixture)", "G54", "(Finish operation: Fixture)",
@@ -78,17 +76,9 @@ class GCodeWriter:
             f.write('\n'.join(self.lines))
 
     def tool_on(self) -> None:
-        """Activates the tool based on the machine mode."""
-        if self.mode == 'laser':
-            self.add_line(f"M4 S{self.intensity}")
-        elif self.mode == 'mill':
-            self.add_line(f"M3 S{self.intensity}")
-        elif self.mode == 'pen':
-            self.rapid(z=self.pen_z)  # Drop pen to paper
+        """Activates the tool using the assigned strategy."""
+        self.tool.tool_on(self)
 
     def tool_off(self) -> None:
-        """Deactivates the tool or lifts it safely."""
-        if self.mode in ['laser', 'mill']:
-            self.add_line("M5")
-        if self.mode == 'pen':
-            self.rapid(z=self.safe_z)  # Lift pen
+        """Deactivates the tool using the assigned strategy."""
+        self.tool.tool_off(self)
