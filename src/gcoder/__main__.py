@@ -7,6 +7,8 @@ import logging
 import os
 import sys
 
+from svgpathtools import svg2paths, Document
+
 from .core import GCodeWriter
 from .core import JobConfig
 from .operations import SVGFillCutter
@@ -49,9 +51,6 @@ def parse_arguments() -> argparse.Namespace:
                         type=int,
                         default=1000,
                         help="XY feed rate (mm/min)")
-    shared.add_argument('--fill',
-                        action='store_true',
-                        help="Perform interior fill")
     shared.add_argument('--stepover',
                         type=float,
                         default=0.4,
@@ -65,9 +64,6 @@ def parse_arguments() -> argparse.Namespace:
                         default='auto',
                         choices=['auto', 'hatch', 'crosshatch', 'concentric', 'spiral'],
                         help="Override tool default fill pattern")
-    shared.add_argument('--outline',
-                        action='store_true',
-                        help="Perform a profile cut (outline) in addition to the fill")
 
     mill = subparsers.add_parser('mill',
                                  parents=[shared],
@@ -148,7 +144,6 @@ def main() -> None:
                            feed_ramp=args.feed_xy,
                            feed_xy=args.feed_xy,
                            compensation=args.compensation)
-        # Laser tool stays on the plane for both rapids and clearances
         args.clearance_z = 0.0
         args.rapid_z = 0.0
     elif args.mode == 'pen':
@@ -171,36 +166,54 @@ def main() -> None:
     
     logger.info("Processing SVG: %s in %s mode", args.svg, args.mode.upper())
 
-    if args.fill:
-        logger.info("Generating FILL toolpaths for %s", args.svg)
-        
-        # Save the original compensation setting for the outline pass
-        original_compensation = config.compensation
-        config.compensation = 'inside'
-        
-        fill_cutter = SVGFillCutter(writer=writer,
-                                    svg_path_file=args.svg,
-                                    config=config,
-                                    stepover_percent=args.stepover,
-                                    fill_angle=args.fill_angle,
-                                    fill_method=args.fill_method)
-        fill_cutter.execute()
+    # 1. Use Document to preserve all group transformations (rotations/translations)
+    doc = Document(args.svg)
+    transformed_paths = doc.paths()
 
-        # Check if the user also requested an outline
-        if args.outline:
-            logger.info("Generating PROFILE toolpaths for %s", args.svg)
+    # 2. Use svg2paths strictly to extract the raw XML attributes in document order
+    _, attributes = svg2paths(args.svg)
+
+    profile_cutter = SVGProfileCutter(writer=writer, svg_path_file=args.svg, config=config)
+    fill_cutter = SVGFillCutter(writer=writer,
+                                svg_path_file=args.svg,
+                                config=config,
+                                stepover_percent=args.stepover,
+                                fill_angle=args.fill_angle,
+                                fill_method=args.fill_method)
+
+    # 3. Zip them together so we evaluate the transformed path alongside its fill property
+    for path, attrs in zip(transformed_paths, attributes):
+        if len(path) == 0:
+            continue
+
+        # Check for direct attribute first
+        fill_val = attrs.get('fill', '').strip().lower()
+        
+        # If not found, check inside the 'style' attribute
+        if not fill_val:
+            style = attrs.get('style', '').strip().lower()
+            for part in style.split(';'):
+                if ':' in part:
+                    key, val = part.split(':', 1)
+                    if key.strip() == 'fill':
+                        fill_val = val.strip()
+                        break
+
+        has_fill = bool(fill_val and fill_val != 'none')
+
+        if has_fill and path.isclosed():
+            logger.info("Entity has fill property '%s' -> Generating FILL toolpath", fill_val)
+            original_compensation = config.compensation
+            config.compensation = 'inside'
+            fill_cutter.offset_distance = config.tool_dia / 2.0
+            fill_cutter.compensation = config.compensation
+            
+            fill_cutter.process_single_path(path)
+            
             config.compensation = original_compensation
-            outline_cutter = SVGProfileCutter(writer=writer,
-                                              svg_path_file=args.svg,
-                                              config=config)
-            outline_cutter.execute()
-
-    else:
-        logger.info("Generating PROFILE toolpaths for %s", args.svg)
-        cutter = SVGProfileCutter(writer=writer,
-                                  svg_path_file=args.svg,
-                                  config=config)
-        cutter.execute()
+        else:
+            logger.info("Entity has no fill -> Generating PROFILE toolpath")
+            profile_cutter.process_single_path(path)
 
     # Retract to clearance at the very end
     writer.add_line("\n( Retract to clearance height before finishing )")
@@ -209,8 +222,7 @@ def main() -> None:
     writer.build_postamble(operation_name=operation_name)
     writer.save(args.output)
 
-    logger.info("Successfully processed profile. Saved G-code to: %s",
-                args.output)
+    logger.info("Successfully processed profile. Saved G-code to: %s", args.output)
 
 
 if __name__ == "__main__":

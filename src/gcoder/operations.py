@@ -87,8 +87,6 @@ class SVGOperation:
             flipped_y_end = (2.0 * self.center_y) - p_end.imag
             points.append((p_end.real, flipped_y_end))
 
-        # TODO: Investigate how this worked to prevent straight lines from being split into segments.
-        # To remove this just return points from here
         geom = LineString(points)
         simplified_geom = geom.simplify(0.01, preserve_topology=True)
         return list(simplified_geom.coords)
@@ -100,7 +98,7 @@ class SVGOperation:
             geom = Polygon(points)
             if self.compensation == 'outside':
                 return geom.buffer(self.offset_distance,
-                                   join_style=JOIN_STYLE_ROUND)
+                                    join_style=JOIN_STYLE_ROUND)
             return geom.buffer(-self.offset_distance,
                                join_style=JOIN_STYLE_ROUND)
 
@@ -112,7 +110,7 @@ class SVGOperation:
         return geom.parallel_offset(self.offset_distance, side=side)
 
     def _write_profile(self, tpath: Sequence[Tuple[float, float]],
-                              is_closed: bool) -> None:
+                               is_closed: bool) -> None:
         """Moves machine to the start coordinate and hands execution to the ToolStrategy."""
         if not tpath:
             return
@@ -140,30 +138,38 @@ class SVGProfileCutter(SVGOperation):
         self._calculate_svg_center(doc)
 
         for path in paths:
-            if len(path) == 0:
+            self.process_single_path(path)
+
+    def process_single_path(self, path: Path) -> None:
+        """Processes an isolated path entity for profile trimming operations."""
+        if len(path) == 0:
+            return
+
+        if self.center_x == 0.0 and self.center_y == 0.0:
+            doc = Document(self.svg_path_file)
+            self._calculate_svg_center(doc)
+
+        points = self._extract_and_flip_points(path)
+        if len(points) < 2:
+            return
+
+        is_closed = path.isclosed()
+        offset_geom = self._apply_tool_compensation(points, is_closed)
+
+        if offset_geom.is_empty:
+            return
+
+        geoms = getattr(offset_geom, 'geoms', [offset_geom])
+
+        for g in geoms:
+            if isinstance(g, Polygon):
+                tpath = [(float(x), float(y)) for x, y in g.exterior.coords]
+            elif isinstance(g, LineString):
+                tpath = [(float(x), float(y)) for x, y in g.coords]
+            else:
                 continue
 
-            points = self._extract_and_flip_points(path)
-            if len(points) < 2:
-                continue
-
-            is_closed = path.isclosed()
-            offset_geom = self._apply_tool_compensation(points, is_closed)
-
-            if offset_geom.is_empty:
-                continue
-
-            geoms = getattr(offset_geom, 'geoms', [offset_geom])
-
-            for g in geoms:
-                if isinstance(g, Polygon):
-                    tpath = [(float(x), float(y)) for x, y in g.exterior.coords]
-                elif isinstance(g, LineString):
-                    tpath = [(float(x), float(y)) for x, y in g.coords]
-                else:
-                    continue
-
-                self._write_profile(tpath, is_closed)
+            self._write_profile(tpath, is_closed)
 
 
 class SVGFillCutter(SVGOperation):
@@ -177,7 +183,6 @@ class SVGFillCutter(SVGOperation):
         super().__init__(**kwargs)
         self.stepover: float = self.tool_dia * stepover_percent
         self.fill_angle: float = fill_angle
-        # Use tool's default if not overridden by CLI
         self.fill_method: str = fill_method if fill_method != 'auto' else self.writer.tool.fill_method
 
     def execute(self) -> None:
@@ -185,31 +190,39 @@ class SVGFillCutter(SVGOperation):
         self._calculate_svg_center(doc)
 
         for path in doc.paths():
-            if len(path) == 0 or not path.isclosed():
+            self.process_single_path(path)
+
+    def process_single_path(self, path: Path) -> None:
+        """Processes an isolated path entity for internal fill profiling operations."""
+        if len(path) == 0 or not path.isclosed():
+            return
+
+        if self.center_x == 0.0 and self.center_y == 0.0:
+            doc = Document(self.svg_path_file)
+            self._calculate_svg_center(doc)
+
+        points = self._extract_and_flip_points(path)
+        base_polygon = Polygon(points)
+        working_polygon = base_polygon.buffer(-self.offset_distance,
+                                              join_style=JOIN_STYLE_ROUND)
+
+        if working_polygon.is_empty:
+            return
+
+        geoms = getattr(working_polygon, 'geoms', [working_polygon])
+
+        for geom in geoms:
+            if not isinstance(geom, Polygon):
                 continue
 
-            points = self._extract_and_flip_points(path)
-            base_polygon = Polygon(points)
-            working_polygon = base_polygon.buffer(-self.offset_distance,
-                                                  join_style=JOIN_STYLE_ROUND)
-
-            if working_polygon.is_empty:
-                continue
-
-            geoms = getattr(working_polygon, 'geoms', [working_polygon])
-
-            for geom in geoms:
-                if not isinstance(geom, Polygon):
-                    continue
-
-                if self.fill_method == 'hatch':
-                    self._execute_linear_hatch(geom)
-                elif self.fill_method == 'crosshatch':
-                    self._execute_cross_hatch(geom)
-                elif self.fill_method == 'spiral':
-                    self._execute_spiral(geom)
-                else:
-                    self._execute_concentric_pocket(geom)
+            if self.fill_method == 'hatch':
+                self._execute_linear_hatch(geom)
+            elif self.fill_method == 'crosshatch':
+                self._execute_cross_hatch(geom)
+            elif self.fill_method == 'spiral':
+                self._execute_spiral(geom)
+            else:
+                self._execute_concentric_pocket(geom)
 
     # pylint: disable=too-many-locals
     def _execute_linear_hatch(self, polygon: Polygon) -> None:
@@ -266,11 +279,9 @@ class SVGFillCutter(SVGOperation):
         
         self.writer.add_line("\n(--- Cross Hatch Pass 2 ---)")
         original_angle = self.fill_angle
-        # Temporarily shift the angle by 90 degrees for the perpendicular pass
         self.fill_angle += 90.0
         self._execute_linear_hatch(polygon)
         
-        # Restore the original angle
         self.fill_angle = original_angle
 
     def _execute_concentric_pocket(self, polygon: Polygon) -> None:
@@ -303,7 +314,6 @@ class SVGFillCutter(SVGOperation):
         cx, cy = polygon.centroid.x, polygon.centroid.y
         minx, miny, maxx, maxy = polygon.bounds
         
-        # Calculate maximum radius needed to clear the bounding box corners
         max_r = np.max([
             np.hypot(minx - cx, miny - cy),
             np.hypot(maxx - cx, miny - cy),
@@ -314,17 +324,10 @@ class SVGFillCutter(SVGOperation):
         if max_r == 0 or self.stepover <= 0:
             return
 
-        # Archimedean spiral: r = b * theta
-        # Radial distance between turns is 2 * pi * b
         b = self.stepover / (2.0 * np.pi)
         max_theta = max_r / b
 
-        # Target a maximum physical length for each straight line segment (e.g., 0.25mm)
-        # This guarantees the outer rings stay just as smooth as the inner rings.
-        # TODO: Modify this from the command line
         max_segment_length = 0.25
-        
-        # Calculate the angular step required at the maximum radius to hit our target length
         theta_step = max_segment_length / max_r if max_r > 0 else 0.1
         
         num_points = max(int(max_theta / theta_step), 10)
@@ -337,7 +340,6 @@ class SVGFillCutter(SVGOperation):
         points = np.column_stack((x_coords, y_coords))
         spiral_line = LineString(points)
 
-        # Clip spiral to the interior polygon bounds
         intersection = polygon.intersection(spiral_line)
 
         if intersection.is_empty:
