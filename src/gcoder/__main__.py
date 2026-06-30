@@ -53,7 +53,7 @@ def parse_arguments() -> argparse.Namespace:
                         help="XY feed rate (mm/min)")
     shared.add_argument('--stepover',
                         type=float,
-                        default=0.4,
+                        default=2.0,
                         help="Fill line spacing")
     shared.add_argument('--fill-angle',
                         type=float,
