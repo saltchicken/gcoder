@@ -201,6 +201,8 @@ class SVGFillCutter(SVGOperation):
                     self._execute_linear_hatch(geom)
                 elif self.fill_method == 'crosshatch':
                     self._execute_cross_hatch(geom)
+                elif self.fill_method == 'spiral':
+                    self._execute_spiral(geom)
                 else:
                     self._execute_concentric_pocket(geom)
 
@@ -288,3 +290,64 @@ class SVGFillCutter(SVGOperation):
         for ring in reversed(rings):
             tpath = [(float(x), float(y)) for x, y in ring.exterior.coords]
             self._write_ramped_profile(tpath, is_closed=True)
+
+    def _execute_spiral(self, polygon: Polygon) -> None:
+        """Generates an Archimedean spiral fill pattern from the polygon's centroid."""
+        self.writer.add_line("\n(--- New Spiral Fill ---)")
+
+        cx, cy = polygon.centroid.x, polygon.centroid.y
+        minx, miny, maxx, maxy = polygon.bounds
+        
+        # Calculate maximum radius needed to clear the bounding box corners
+        max_r = np.max([
+            np.hypot(minx - cx, miny - cy),
+            np.hypot(maxx - cx, miny - cy),
+            np.hypot(minx - cx, maxy - cy),
+            np.hypot(maxx - cx, maxy - cy)
+        ])
+
+        if max_r == 0 or self.stepover <= 0:
+            return
+
+        # Archimedean spiral: r = b * theta
+        # Radial distance between turns is 2 * pi * b
+        b = self.stepover / (2.0 * np.pi)
+        max_theta = max_r / b
+
+        # Generate smooth curve resolution (~0.1 radians per point)
+        num_points = max(int(max_theta / 0.1), 10)
+        theta = np.linspace(0, max_theta, num_points)
+        r = b * theta
+
+        x_coords = cx + r * np.cos(theta)
+        y_coords = cy + r * np.sin(theta)
+
+        points = np.column_stack((x_coords, y_coords))
+        spiral_line = LineString(points)
+
+        # Clip spiral to the interior polygon bounds
+        intersection = polygon.intersection(spiral_line)
+
+        if intersection.is_empty:
+            return
+
+        segments = []
+        if isinstance(intersection, LineString):
+            segments.append(intersection)
+        else:
+            inter_parts = getattr(intersection, 'geoms', [])
+            segments.extend([g for g in inter_parts if isinstance(g, LineString)])
+
+        # Write paths to GCode writer
+        for line in segments:
+            coords = list(line.coords)
+            if not coords:
+                continue
+            self.writer.rapid(x=coords[0][0], y=coords[0][1])
+            self.writer.rapid(z=1.0)
+            self.writer.tool_on()
+            for x, y in coords[1:]:
+                self.writer.feed(x=x, y=y, f=self.feed_xy)
+            self.writer.tool_off()
+
+        self.writer.rapid(z=self.writer.safe_z)

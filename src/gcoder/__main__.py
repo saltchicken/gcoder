@@ -59,7 +59,7 @@ def parse_arguments() -> argparse.Namespace:
     shared.add_argument('--fill-method',
                         type=str,
                         default='auto',
-                        choices=['auto', 'hatch', 'crosshatch', 'concentric'],
+                        choices=['auto', 'hatch', 'crosshatch', 'concentric', 'spiral'],
                         help="Override tool default fill pattern")
 
     mill = subparsers.add_parser('mill',
