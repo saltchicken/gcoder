@@ -2,9 +2,10 @@ import argparse
 import logging
 import os
 import sys
+from dataclasses import dataclass
 
 from .core import GCodeWriter
-from .operations import SVGProfileCutter
+from .operations import SVGProfileCutter, SVGFillCutter
 from .tools import LaserStrategy, MillStrategy, PenStrategy
 
 # Configure standard logging
@@ -13,6 +14,15 @@ logging.basicConfig(
     format='%(levelname)s: %(message)s'
 )
 logger = logging.getLogger(__name__)
+
+@dataclass
+class JobConfig:
+    """Unified configuration mapping for all tool types."""
+    tool_dia: float
+    depth: float
+    step_down: float
+    feed_ramp: int
+    compensation: str
 
 def main() -> None:
     # 1. Main Parser
@@ -54,40 +64,58 @@ def main() -> None:
         logger.error(f"SVG file not found at '{args.svg}'")
         sys.exit(1)
 
-    # 6. Instantiate the correct Tool Strategy
-    if args.mode == 'laser':
-        tool = LaserStrategy(intensity=getattr(args, 'power', 1000))
+    # 6. Explicit Configuration Mapping
+    if args.mode == 'mill':
+        tool = MillStrategy(intensity=10000)
+        config = JobConfig(
+            tool_dia=args.tool_dia,
+            depth=args.depth,
+            step_down=args.step_down,
+            feed_ramp=args.feed_ramp,
+            compensation=args.compensation
+        )
+        
+    elif args.mode == 'laser':
+        tool = LaserStrategy(intensity=args.power)
+        config = JobConfig(
+            tool_dia=args.kerf,
+            depth=args.focus_z,
+            step_down=args.focus_z,  # Lasers operate at a single focal height
+            feed_ramp=args.feed_xy,  # Lasers do not plunge, they drop at normal feed
+            compensation=args.compensation
+        )
+        
     elif args.mode == 'pen':
-        tool = PenStrategy(pen_z=getattr(args, 'pen_down_z', getattr(args, 'depth', 0.0)))
-    elif args.mode == 'mill':
-        tool = MillStrategy(intensity=getattr(args, 'power', 10000))
+        tool = PenStrategy(pen_z=args.pen_down_z)
+        config = JobConfig(
+            tool_dia=0.1,            # Standard assumed pen width
+            depth=args.pen_down_z,
+            step_down=args.pen_down_z,
+            feed_ramp=args.feed_xy,
+            compensation='on'        # Pens trace exactly on the line
+        )
+    else:
+        logger.error("Unknown machine mode.")
+        sys.exit(1)
 
-    # Initialize the core writer via dependency injection
+    # 7. Initialize Writer and Cutter
     writer = GCodeWriter(tool=tool, safe_z=args.safe_z)
     operation_name = f"SVG_{args.mode.upper()}"
     
-    # 7. Unify arguments for the SVGProfileCutter
-    tool_dia = getattr(args, 'tool_dia', getattr(args, 'kerf', 0.1))
-    depth = getattr(args, 'depth', getattr(args, 'focus_z', getattr(args, 'pen_down_z', 0.0)))
-    step_down = getattr(args, 'step_down', depth) 
-    feed_ramp = getattr(args, 'feed_ramp', args.feed_xy)
-    compensation = getattr(args, 'compensation', 'on') 
-
-    writer.build_preamble(operation_name=operation_name, tool_dia=tool_dia)
+    writer.build_preamble(operation_name=operation_name, tool_dia=config.tool_dia)
     logger.info(f"Processing SVG: {args.svg} in {args.mode.upper()} mode")
     
     if args.fill:
         logger.info(f"Generating FILL toolpaths for {args.svg}")
-        from .operations import SVGFillCutter
         cutter = SVGFillCutter(
             writer=writer,
             svg_path_file=args.svg,
             compensation='inside', 
-            tool_dia=tool_dia,
-            depth=depth,
-            step_down=step_down,
+            tool_dia=config.tool_dia,
+            depth=config.depth,
+            step_down=config.step_down,
             feed_xy=args.feed_xy,
-            feed_ramp=feed_ramp,
+            feed_ramp=config.feed_ramp,
             stepover_percent=args.stepover
         )
     else:
@@ -95,12 +123,12 @@ def main() -> None:
         cutter = SVGProfileCutter(
             writer=writer,
             svg_path_file=args.svg,
-            compensation=compensation,
-            tool_dia=tool_dia,
-            depth=depth,
-            step_down=step_down,
+            compensation=config.compensation,
+            tool_dia=config.tool_dia,
+            depth=config.depth,
+            step_down=config.step_down,
             feed_xy=args.feed_xy,
-            feed_ramp=feed_ramp
+            feed_ramp=config.feed_ramp
         )
         
     cutter.execute()
