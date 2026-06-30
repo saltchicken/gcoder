@@ -1,10 +1,13 @@
-import numpy as np
-from abc import ABC, abstractmethod
+from abc import ABC
+from abc import abstractmethod
 from typing import List, Tuple, TYPE_CHECKING
+
+import numpy as np
 
 # Avoid circular imports for type hinting
 if TYPE_CHECKING:
     from .core import GCodeWriter
+
 
 class ToolStrategy(ABC):
     """Base class for different machine tools (Mill, Laser, Pen)."""
@@ -30,12 +33,15 @@ class ToolStrategy(ABC):
         pass
 
     @abstractmethod
-    def execute_profile(self, writer: 'GCodeWriter', path: List[Tuple[float, float]], is_closed: bool, feed_xy: int, depth: float, step_down: float) -> None:
+    def execute_profile(self, writer: 'GCodeWriter',
+                        path: List[Tuple[float, float]], is_closed: bool,
+                        feed_xy: int, depth: float, step_down: float) -> None:
         """Executes the toolpath trace."""
         pass
 
 
 class LaserStrategy(ToolStrategy):
+
     def __init__(self, intensity: int):
         self.intensity = intensity
 
@@ -53,7 +59,9 @@ class LaserStrategy(ToolStrategy):
     def tool_off(self, writer: 'GCodeWriter') -> None:
         writer.add_line("M5")
 
-    def execute_profile(self, writer: 'GCodeWriter', path: List[Tuple[float, float]], is_closed: bool, feed_xy: int, depth: float, step_down: float) -> None:
+    def execute_profile(self, writer: 'GCodeWriter',
+                        path: List[Tuple[float, float]], is_closed: bool,
+                        feed_xy: int, depth: float, step_down: float) -> None:
         writer.rapid(z=1.0)
         self.tool_on(writer)
         for x, y in path[1:]:
@@ -63,6 +71,7 @@ class LaserStrategy(ToolStrategy):
 
 
 class PenStrategy(ToolStrategy):
+
     def __init__(self, pen_z: float):
         self.pen_z = pen_z
 
@@ -80,7 +89,9 @@ class PenStrategy(ToolStrategy):
     def tool_off(self, writer: 'GCodeWriter') -> None:
         writer.rapid(z=writer.safe_z)
 
-    def execute_profile(self, writer: 'GCodeWriter', path: List[Tuple[float, float]], is_closed: bool, feed_xy: int, depth: float, step_down: float) -> None:
+    def execute_profile(self, writer: 'GCodeWriter',
+                        path: List[Tuple[float, float]], is_closed: bool,
+                        feed_xy: int, depth: float, step_down: float) -> None:
         writer.rapid(z=1.0)
         self.tool_on(writer)
         for x, y in path[1:]:
@@ -90,6 +101,7 @@ class PenStrategy(ToolStrategy):
 
 
 class MillStrategy(ToolStrategy):
+
     def __init__(self, intensity: int):
         self.intensity = intensity
 
@@ -107,10 +119,14 @@ class MillStrategy(ToolStrategy):
     def tool_off(self, writer: 'GCodeWriter') -> None:
         writer.add_line("M5")
 
-    def execute_profile(self, writer: 'GCodeWriter', path: List[Tuple[float, float]], is_closed: bool, feed_xy: int, depth: float, step_down: float) -> None:
+    def execute_profile(self, writer: 'GCodeWriter',
+                        path: List[Tuple[float, float]], is_closed: bool,
+                        feed_xy: int, depth: float, step_down: float) -> None:
         writer.rapid(z=1.0)
 
-        path_length = sum(np.hypot(path[i][0] - path[i - 1][0], path[i][1] - path[i - 1][1]) for i in range(1, len(path)))
+        path_length = sum(
+            np.hypot(path[i][0] - path[i - 1][0], path[i][1] - path[i - 1][1])
+            for i in range(1, len(path)))
         if path_length == 0:
             path_length = 0.0001
 
@@ -130,7 +146,8 @@ class MillStrategy(ToolStrategy):
                 segment_len = np.hypot(x - prev_x, y - prev_y)
                 accumulated_dist += segment_len
 
-                point_z = current_z - (z_drop * (accumulated_dist / path_length))
+                point_z = current_z - (z_drop *
+                                       (accumulated_dist / path_length))
                 writer.feed(x=x, y=y, z=point_z, f=feed_xy)
 
             current_z = target_z
