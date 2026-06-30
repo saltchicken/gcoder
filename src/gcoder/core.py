@@ -1,6 +1,17 @@
 import datetime
+from dataclasses import dataclass
 from typing import List, Optional
 from .tools import ToolStrategy
+
+@dataclass
+class JobConfig:
+    """Unified configuration mapping for all tool types."""
+    tool_dia: float
+    depth: float
+    step_down: float
+    feed_ramp: int
+    feed_xy: int
+    compensation: str
 
 class GCodeWriter:
 

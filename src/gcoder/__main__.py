@@ -2,9 +2,8 @@ import argparse
 import logging
 import os
 import sys
-from dataclasses import dataclass
 
-from .core import GCodeWriter
+from .core import GCodeWriter, JobConfig
 from .operations import SVGProfileCutter, SVGFillCutter
 from .tools import LaserStrategy, MillStrategy, PenStrategy
 
@@ -14,15 +13,6 @@ logging.basicConfig(
     format='%(levelname)s: %(message)s'
 )
 logger = logging.getLogger(__name__)
-
-@dataclass
-class JobConfig:
-    """Unified configuration mapping for all tool types."""
-    tool_dia: float
-    depth: float
-    step_down: float
-    feed_ramp: int
-    compensation: str
 
 def main() -> None:
     # 1. Main Parser
@@ -72,6 +62,7 @@ def main() -> None:
             depth=args.depth,
             step_down=args.step_down,
             feed_ramp=args.feed_ramp,
+            feed_xy=args.feed_xy,
             compensation=args.compensation
         )
         
@@ -82,6 +73,7 @@ def main() -> None:
             depth=args.focus_z,
             step_down=args.focus_z,  # Lasers operate at a single focal height
             feed_ramp=args.feed_xy,  # Lasers do not plunge, they drop at normal feed
+            feed_xy=args.feed_xy,
             compensation=args.compensation
         )
         
@@ -92,6 +84,7 @@ def main() -> None:
             depth=args.pen_down_z,
             step_down=args.pen_down_z,
             feed_ramp=args.feed_xy,
+            feed_xy=args.feed_xy,
             compensation='on'        # Pens trace exactly on the line
         )
     else:
@@ -107,15 +100,11 @@ def main() -> None:
     
     if args.fill:
         logger.info(f"Generating FILL toolpaths for {args.svg}")
+        config.compensation = 'inside'  # Fills default logically to inside operations
         cutter = SVGFillCutter(
             writer=writer,
             svg_path_file=args.svg,
-            compensation='inside', 
-            tool_dia=config.tool_dia,
-            depth=config.depth,
-            step_down=config.step_down,
-            feed_xy=args.feed_xy,
-            feed_ramp=config.feed_ramp,
+            config=config,
             stepover_percent=args.stepover
         )
     else:
@@ -123,12 +112,7 @@ def main() -> None:
         cutter = SVGProfileCutter(
             writer=writer,
             svg_path_file=args.svg,
-            compensation=config.compensation,
-            tool_dia=config.tool_dia,
-            depth=config.depth,
-            step_down=config.step_down,
-            feed_xy=args.feed_xy,
-            feed_ramp=config.feed_ramp
+            config=config
         )
         
     cutter.execute()
