@@ -37,10 +37,14 @@ def parse_arguments() -> argparse.Namespace:
                         type=str,
                         default="output.nc",
                         help="Output file path")
-    shared.add_argument('--safe-z',
+    shared.add_argument('--clearance-z',
                         type=float,
                         default=5.0,
-                        help="Safe travel Z (mm)")
+                        help="High Z height for safe global travel (mm)")
+    shared.add_argument('--rapid-z',
+                        type=float,
+                        default=1.0,
+                        help="Low Z height for rapid hops between cuts (mm)")
     shared.add_argument('--feed-xy',
                         type=int,
                         default=1000,
@@ -144,8 +148,9 @@ def main() -> None:
                            feed_ramp=args.feed_xy,
                            feed_xy=args.feed_xy,
                            compensation=args.compensation)
-        # TODO: Little hack to make laser tool rapid move at Z0.0
-        args.safe_z = 0.0
+        # Laser tool stays on the plane for both rapids and clearances
+        args.clearance_z = 0.0
+        args.rapid_z = 0.0
     elif args.mode == 'pen':
         tool = PenStrategy(pen_z=args.pen_down_z)
         config = JobConfig(tool_dia=0.1,
@@ -158,11 +163,16 @@ def main() -> None:
         logger.error("Unknown machine mode.")
         sys.exit(1)
 
-    writer = GCodeWriter(tool=tool, safe_z=args.safe_z)
+    writer = GCodeWriter(tool=tool, clearance_z=args.clearance_z, rapid_z=args.rapid_z)
     operation_name = f"SVG_{args.mode.upper()}"
 
     writer.build_preamble(operation_name=operation_name,
                           tool_dia=config.tool_dia)
+                          
+    # Initial plunge to clearance height before doing any XY moves
+    writer.add_line("\n( Move to clearance height before starting )")
+    writer.rapid(z=writer.clearance_z)
+    
     logger.info("Processing SVG: %s in %s mode", args.svg, args.mode.upper())
 
     if args.fill:
@@ -195,6 +205,10 @@ def main() -> None:
                                   svg_path_file=args.svg,
                                   config=config)
         cutter.execute()
+
+    # Retract to clearance at the very end
+    writer.add_line("\n( Retract to clearance height before finishing )")
+    writer.rapid(z=writer.clearance_z)
 
     writer.build_postamble(operation_name=operation_name)
     writer.save(args.output)

@@ -63,12 +63,12 @@ class LaserStrategy(ToolStrategy):
     def execute_profile(self, writer: 'GCodeWriter',
                         path: Sequence[Tuple[float, float]], is_closed: bool,
                         feed_xy: int, depth: float, step_down: float) -> None:
-        writer.rapid(z=0.0)
+        writer.rapid(z=writer.rapid_z)
         self.tool_on(writer)
         for x, y in path[1:]:
             writer.feed(x=x, y=y, f=feed_xy)
         self.tool_off(writer)
-        writer.rapid(z=writer.safe_z)
+        writer.rapid(z=writer.rapid_z)
 
 
 class PenStrategy(ToolStrategy):
@@ -89,17 +89,17 @@ class PenStrategy(ToolStrategy):
         writer.rapid(z=self.pen_z)
 
     def tool_off(self, writer: 'GCodeWriter') -> None:
-        writer.rapid(z=writer.safe_z)
+        writer.rapid(z=writer.rapid_z)
 
     def execute_profile(self, writer: 'GCodeWriter',
                         path: Sequence[Tuple[float, float]], is_closed: bool,
                         feed_xy: int, depth: float, step_down: float) -> None:
-        writer.rapid(z=1.0)
+        writer.rapid(z=writer.rapid_z)
         self.tool_on(writer)
         for x, y in path[1:]:
             writer.feed(x=x, y=y, f=feed_xy)
         self.tool_off(writer)
-        writer.rapid(z=writer.safe_z)
+        writer.rapid(z=writer.rapid_z)
 
 
 class MillStrategy(ToolStrategy):
@@ -126,7 +126,7 @@ class MillStrategy(ToolStrategy):
     def execute_profile(self, writer: 'GCodeWriter',
                         path: Sequence[Tuple[float, float]], is_closed: bool,
                         feed_xy: int, depth: float, step_down: float) -> None:
-        writer.rapid(z=1.0)
+        writer.rapid(z=writer.rapid_z)
 
         path_length = sum(
             np.hypot(path[i][0] - path[i - 1][0], path[i][1] - path[i - 1][1])
@@ -159,4 +159,4 @@ class MillStrategy(ToolStrategy):
                 for x, y in path[1:]:
                     writer.feed(x=x, y=y, f=feed_xy)
 
-        writer.rapid(z=writer.safe_z)
+        writer.rapid(z=writer.rapid_z)

@@ -250,13 +250,13 @@ class SVGFillCutter(SVGOperation):
         for line in final_lines:
             coords = list(line.coords)
             self.writer.rapid(x=coords[0][0], y=coords[0][1])
-            self.writer.rapid(z=1.0)
+            self.writer.rapid(z=self.writer.rapid_z)
             self.writer.tool_on()
             for x, y in coords[1:]:
                 self.writer.feed(x=x, y=y, f=self.feed_xy)
             self.writer.tool_off()
 
-        self.writer.rapid(z=self.writer.safe_z)
+        self.writer.rapid(z=self.writer.rapid_z)
 
     def _execute_cross_hatch(self, polygon: Polygon) -> None:
         """Generates a cross-hatch pattern by running linear hatch twice perpendicularly."""

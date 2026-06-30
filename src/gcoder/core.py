@@ -21,9 +21,10 @@ class JobConfig:
 class GCodeWriter:
     """Handles line-by-line formatting and saving of CNC instructions."""
 
-    def __init__(self, tool: ToolStrategy, safe_z: float = 5.0) -> None:
+    def __init__(self, tool: ToolStrategy, clearance_z: float = 5.0, rapid_z: float = 1.0) -> None:
         self.lines: List[str] = []
-        self.safe_z: float = safe_z
+        self.clearance_z: float = clearance_z
+        self.rapid_z: float = rapid_z
         self.tool: ToolStrategy = tool
 
     def add_line(self, line: str) -> None:
@@ -84,22 +85,20 @@ class GCodeWriter:
     def build_preamble(self,
                        operation_name: str = "GCode_Operation",
                        tool_dia: float = 3.175) -> None:
-        """Inserts the initial setup, tool changes, and safe heights."""
+        """Inserts the initial setup, coordinate systems, and tool metadata."""
         self.lines.extend([
             "(Exported by gcoder)",
             f"(META: MODE={self.tool.name.upper()})",
             f"(META: TOOL_DIA={tool_dia:.3f})",
             "(Begin preamble)", "G17 G90",
             "G21", "G54",
-            f"(Begin operation: {operation_name})",
-            f"G0 Z{self.safe_z:.3f}", "G0 X0.000 Y0.000",
-            "G0 Z0.000", f"G0 Z{self.safe_z:.3f}"
+            f"(Begin operation: {operation_name})"
         ])
 
     def build_postamble(self, operation_name: str = "GCode_Operation") -> None:
-        """Closes out the operation and machine safely."""
+        """Closes out the operation and machine safely without making movements."""
         self.lines.extend([
-            f"G0 Z{self.safe_z:.3f}", f"(Finish operation: {operation_name})",
+            f"(Finish operation: {operation_name})",
             "(Begin postamble)", "M5", "G17 G90", "M2"
         ])
 
