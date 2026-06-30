@@ -53,6 +53,7 @@ class GCodeWriter:
         current_time = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S.%f")
         self.lines.extend([
             "(Exported by gcoder)", f"(Output Time:{current_time})",
+            f"(META: MODE={self.mode.upper()})",      # <-- Add mode tracking
             f"(META: TOOL_DIA={tool_dia:.3f})",
             "(Begin preamble)", "G17 G90", "G21", "(Begin operation: Fixture)",
             "(Path: Fixture)", "G54", "(Finish operation: Fixture)",

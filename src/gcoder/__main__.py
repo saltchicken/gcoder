@@ -25,6 +25,8 @@ def main() -> None:
     shared.add_argument('--output', type=str, default="output.nc", help="Output file path")
     shared.add_argument('--safe-z', type=float, default=5.0, help="Safe travel Z (mm)")
     shared.add_argument('--feed-xy', type=int, default=1000, help="XY feed rate (mm/min)")
+    shared.add_argument('--fill', action='store_true', help="Perform an interior fill instead of an outline")
+    shared.add_argument('--stepover', type=float, default=0.4, help="Fill line spacing as a percentage of tool diameter (e.g., 0.4 for 40%)")
 
     # 3. Mill Sub-command
     mill = subparsers.add_parser('mill', parents=[shared], help="CNC Router/Mill mode")
@@ -84,16 +86,33 @@ def main() -> None:
     writer.build_preamble(operation_name=operation_name, tool_dia=tool_dia)
     logger.info(f"Processing SVG: {args.svg} in {args.mode.upper()} mode")
     
-    cutter = SVGProfileCutter(
-        writer=writer,
-        svg_path_file=args.svg,
-        compensation=compensation,
-        tool_dia=tool_dia,
-        depth=depth,
-        step_down=step_down,
-        feed_xy=args.feed_xy,
-        feed_ramp=feed_ramp
-    )
+    if args.fill:
+        logger.info(f"Generating FILL toolpaths for {args.svg}")
+        from .operations import SVGFillCutter
+        cutter = SVGFillCutter(
+            writer=writer,
+            svg_path_file=args.svg,
+            compensation='inside', # Fills must always stay inside the line
+            tool_dia=tool_dia,
+            depth=depth,
+            step_down=step_down,
+            feed_xy=args.feed_xy,
+            feed_ramp=feed_ramp,
+            stepover_percent=args.stepover
+        )
+    else:
+        logger.info(f"Generating PROFILE toolpaths for {args.svg}")
+        cutter = SVGProfileCutter(
+            writer=writer,
+            svg_path_file=args.svg,
+            compensation=compensation,
+            tool_dia=tool_dia,
+            depth=depth,
+            step_down=step_down,
+            feed_xy=args.feed_xy,
+            feed_ramp=feed_ramp
+        )
+        
     cutter.execute()
 
     writer.build_postamble(operation_name=operation_name)
