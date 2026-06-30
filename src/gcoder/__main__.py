@@ -168,10 +168,6 @@ def main() -> None:
 
     writer.build_preamble(operation_name=operation_name,
                           tool_dia=config.tool_dia)
-                          
-    # Initial plunge to clearance height before doing any XY moves
-    writer.add_line("\n( Move to clearance height before starting )")
-    writer.rapid(z=writer.clearance_z)
     
     logger.info("Processing SVG: %s in %s mode", args.svg, args.mode.upper())
 

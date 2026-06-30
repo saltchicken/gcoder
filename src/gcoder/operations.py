@@ -120,6 +120,7 @@ class SVGOperation:
         self.writer.add_line(
             f"\n(--- New Profile Cut: {self.compensation} ---)")
         start_x, start_y = tpath[0]
+        self.writer.rapid(z=self.writer.clearance_z)
         self.writer.rapid(x=start_x, y=start_y)
 
         self.writer.tool.execute_profile(writer=self.writer,
