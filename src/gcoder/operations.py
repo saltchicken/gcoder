@@ -87,7 +87,11 @@ class SVGOperation:
             flipped_y_end = (2.0 * self.center_y) - p_end.imag
             points.append((p_end.real, flipped_y_end))
 
-        return points
+        # TODO: Investigate how this worked to prevent straight lines from being split into segments.
+        # To remove this just return points from here
+        geom = LineString(points)
+        simplified_geom = geom.simplify(0.01, preserve_topology=True)
+        return list(simplified_geom.coords)
 
     def _apply_tool_compensation(self, points: List[Tuple[float, float]],
                                  is_closed: bool) -> BaseGeometry:
