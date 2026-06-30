@@ -1,10 +1,12 @@
+"""
+Tool strategy definitions mapping specific operational behaviors for CNC variations.
+"""
 from abc import ABC
 from abc import abstractmethod
-from typing import List, Tuple, TYPE_CHECKING
+from typing import Sequence, Tuple, TYPE_CHECKING
 
 import numpy as np
 
-# Avoid circular imports for type hinting
 if TYPE_CHECKING:
     from .core import GCodeWriter
 
@@ -16,31 +18,30 @@ class ToolStrategy(ABC):
     @abstractmethod
     def name(self) -> str:
         """Name of the tool mode."""
-        pass
 
     @property
     @abstractmethod
     def fill_method(self) -> str:
         """Preferred fill geometry ('hatch' or 'concentric')."""
-        pass
 
     @abstractmethod
     def tool_on(self, writer: 'GCodeWriter') -> None:
-        pass
+        """Instructs the machine to turn the tool on."""
 
     @abstractmethod
     def tool_off(self, writer: 'GCodeWriter') -> None:
-        pass
+        """Instructs the machine to turn the tool off."""
 
+    # pylint: disable=too-many-arguments, too-many-positional-arguments
     @abstractmethod
     def execute_profile(self, writer: 'GCodeWriter',
-                        path: List[Tuple[float, float]], is_closed: bool,
+                        path: Sequence[Tuple[float, float]], is_closed: bool,
                         feed_xy: int, depth: float, step_down: float) -> None:
         """Executes the toolpath trace."""
-        pass
 
 
 class LaserStrategy(ToolStrategy):
+    """Strategy dictating parameters and mechanics for a laser engraver."""
 
     def __init__(self, intensity: int):
         self.intensity = intensity
@@ -60,7 +61,7 @@ class LaserStrategy(ToolStrategy):
         writer.add_line("M5")
 
     def execute_profile(self, writer: 'GCodeWriter',
-                        path: List[Tuple[float, float]], is_closed: bool,
+                        path: Sequence[Tuple[float, float]], is_closed: bool,
                         feed_xy: int, depth: float, step_down: float) -> None:
         writer.rapid(z=1.0)
         self.tool_on(writer)
@@ -71,6 +72,7 @@ class LaserStrategy(ToolStrategy):
 
 
 class PenStrategy(ToolStrategy):
+    """Strategy dictating mechanical behavior for an attached plotter pen."""
 
     def __init__(self, pen_z: float):
         self.pen_z = pen_z
@@ -90,7 +92,7 @@ class PenStrategy(ToolStrategy):
         writer.rapid(z=writer.safe_z)
 
     def execute_profile(self, writer: 'GCodeWriter',
-                        path: List[Tuple[float, float]], is_closed: bool,
+                        path: Sequence[Tuple[float, float]], is_closed: bool,
                         feed_xy: int, depth: float, step_down: float) -> None:
         writer.rapid(z=1.0)
         self.tool_on(writer)
@@ -101,6 +103,7 @@ class PenStrategy(ToolStrategy):
 
 
 class MillStrategy(ToolStrategy):
+    """Strategy for standard vertical machining and endmill processing."""
 
     def __init__(self, intensity: int):
         self.intensity = intensity
@@ -119,8 +122,9 @@ class MillStrategy(ToolStrategy):
     def tool_off(self, writer: 'GCodeWriter') -> None:
         writer.add_line("M5")
 
+    # pylint: disable=too-many-locals
     def execute_profile(self, writer: 'GCodeWriter',
-                        path: List[Tuple[float, float]], is_closed: bool,
+                        path: Sequence[Tuple[float, float]], is_closed: bool,
                         feed_xy: int, depth: float, step_down: float) -> None:
         writer.rapid(z=1.0)
 
@@ -132,9 +136,7 @@ class MillStrategy(ToolStrategy):
 
         current_z = 0.0
         while current_z > depth:
-            target_z = current_z - step_down
-            if target_z < depth:
-                target_z = depth
+            target_z = max(current_z - step_down, depth)
 
             z_drop = current_z - target_z
             accumulated_dist = 0.0

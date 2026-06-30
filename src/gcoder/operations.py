@@ -1,4 +1,7 @@
-from typing import List, Optional, Tuple
+"""
+Defines geometrical operations to map SVG paths into compensated CNC trajectories.
+"""
+from typing import List, Optional, Sequence, Tuple
 
 import numpy as np
 from shapely.affinity import rotate
@@ -11,22 +14,22 @@ from svgpathtools import Path
 from .core import GCodeWriter
 from .core import JobConfig
 
-JOIN_STYLE_ROUND: int = 1
+JOIN_STYLE_ROUND = 'round'
 
 
 class SVGOperation:
     """
     Abstract base class for all SVG-to-GCode operations.
-    Handles document parsing, center calculation, coordinate mapping, 
+    Handles document parsing, center calculation, coordinate mapping,
     and tool compensation geometry.
     """
 
+    # pylint: disable=too-many-instance-attributes
     def __init__(self, writer: GCodeWriter, svg_path_file: str,
                  config: JobConfig) -> None:
         self.writer: GCodeWriter = writer
         self.svg_path_file: str = svg_path_file
 
-        # Unpacked shared configurations
         self.compensation: str = config.compensation
         self.tool_dia: float = config.tool_dia
         self.offset_distance: float = config.tool_dia / 2.0
@@ -44,23 +47,27 @@ class SVGOperation:
             "Subclasses must implement the execute method.")
 
     def _calculate_svg_center(self, doc: Document) -> None:
-        """Determines the center of the SVG document from viewBox or height/width attributes."""
+        """Determines the center of the SVG document from viewBox or dimensions."""
+        if doc.tree is None:
+            return
+
         root = doc.tree.getroot()
+        if root is None:
+            return
+
         viewbox_str = root.get('viewBox')
 
-        if viewbox_str:
+        if viewbox_str is not None:
             vb_parts = viewbox_str.replace(',', ' ').split()
             self.center_x = float(vb_parts[0]) + (float(vb_parts[2]) / 2.0)
             self.center_y = float(vb_parts[1]) + (float(vb_parts[3]) / 2.0)
         else:
-            w_str = root.get('width',
-                             '100').replace('mm',
-                                            '').replace('px',
-                                                        '').replace('%', '')
-            h_str = root.get('height',
-                             '100').replace('mm',
-                                            '').replace('px',
-                                                        '').replace('%', '')
+            w_val = root.get('width', '100')
+            h_val = root.get('height', '100')
+            w_str = str(w_val).replace('mm', '').replace('px',
+                                                         '').replace('%', '')
+            h_str = str(h_val).replace('mm', '').replace('px',
+                                                         '').replace('%', '')
             self.center_x = float(w_str) / 2.0
             self.center_y = float(h_str) / 2.0
 
@@ -90,30 +97,27 @@ class SVGOperation:
             if self.compensation == 'outside':
                 return geom.buffer(self.offset_distance,
                                    join_style=JOIN_STYLE_ROUND)
-            else:
-                return geom.buffer(-self.offset_distance,
-                                   join_style=JOIN_STYLE_ROUND)
+            return geom.buffer(-self.offset_distance,
+                               join_style=JOIN_STYLE_ROUND)
 
         geom = LineString(points)
         if self.compensation == 'on':
             return geom
-        else:
-            side = 'left' if self.compensation == 'outside' else 'right'
-            return geom.parallel_offset(self.offset_distance, side=side)
 
-    def _write_ramped_profile(self, tpath: List[Tuple[float, float]],
+        side = 'left' if self.compensation == 'outside' else 'right'
+        return geom.parallel_offset(self.offset_distance, side=side)
+
+    def _write_ramped_profile(self, tpath: Sequence[Tuple[float, float]],
                               is_closed: bool) -> None:
-        """Moves the machine to the start coordinate and hands profile execution to the ToolStrategy."""
+        """Moves machine to the start coordinate and hands execution to the ToolStrategy."""
         if not tpath:
             return
 
         self.writer.add_line(
             f"\n(--- New Profile Cut: {self.compensation} ---)")
-
         start_x, start_y = tpath[0]
         self.writer.rapid(x=start_x, y=start_y)
 
-        # Strategy Pattern delegation
         self.writer.tool.execute_profile(writer=self.writer,
                                          path=tpath,
                                          is_closed=is_closed,
@@ -128,7 +132,6 @@ class SVGProfileCutter(SVGOperation):
     def execute(self) -> None:
         doc = Document(self.svg_path_file)
         paths: List[Path] = doc.paths()
-
         self._calculate_svg_center(doc)
 
         for path in paths:
@@ -145,14 +148,13 @@ class SVGProfileCutter(SVGOperation):
             if offset_geom.is_empty:
                 continue
 
-            geoms = offset_geom.geoms if hasattr(offset_geom,
-                                                 'geoms') else [offset_geom]
+            geoms = getattr(offset_geom, 'geoms', [offset_geom])
 
             for g in geoms:
                 if isinstance(g, Polygon):
-                    tpath = list(g.exterior.coords)
+                    tpath = [(float(x), float(y)) for x, y in g.exterior.coords]
                 elif isinstance(g, LineString):
-                    tpath = list(g.coords)
+                    tpath = [(float(x), float(y)) for x, y in g.coords]
                 else:
                     continue
 
@@ -180,30 +182,27 @@ class SVGFillCutter(SVGOperation):
 
             points = self._extract_and_flip_points(path)
             base_polygon = Polygon(points)
-
-            # Pocket boundaries are offset inward by the tool radius
             working_polygon = base_polygon.buffer(-self.offset_distance,
                                                   join_style=JOIN_STYLE_ROUND)
 
             if working_polygon.is_empty:
                 continue
 
-            geoms = working_polygon.geoms if hasattr(
-                working_polygon, 'geoms') else [working_polygon]
+            geoms = getattr(working_polygon, 'geoms', [working_polygon])
 
             for geom in geoms:
                 if not isinstance(geom, Polygon):
                     continue
 
-                # Query tool strategy for execution configuration
                 if self.writer.tool.fill_method == 'hatch':
                     self._execute_linear_hatch(geom)
                 else:
                     self._execute_concentric_pocket(geom)
 
+    # pylint: disable=too-many-locals
     def _execute_linear_hatch(self, polygon: Polygon) -> None:
         """Hatching line-fill generator for raster tools (Lasers/Pens)."""
-        self.writer.add_line(f"\n(--- New Hatch Fill ---)")
+        self.writer.add_line("\n(--- New Hatch Fill ---)")
 
         rotated_poly = rotate(polygon, -self.fill_angle, origin='centroid')
         minx, miny, maxx, maxy = rotated_poly.bounds
@@ -220,12 +219,11 @@ class SVGFillCutter(SVGOperation):
             segments = []
             if isinstance(intersection, LineString):
                 segments.append(intersection)
-            elif hasattr(intersection, 'geoms'):
-                segments.extend([
-                    g for g in intersection.geoms if isinstance(g, LineString)
-                ])
+            else:
+                inter_parts = getattr(intersection, 'geoms', [])
+                segments.extend(
+                    [g for g in inter_parts if isinstance(g, LineString)])
 
-            # Zig-zag path sorting optimization
             if i % 2 == 1:
                 segments = [
                     LineString(list(seg.coords)[::-1]) for seg in segments[::-1]
@@ -242,7 +240,6 @@ class SVGFillCutter(SVGOperation):
             coords = list(line.coords)
             self.writer.rapid(x=coords[0][0], y=coords[0][1])
             self.writer.rapid(z=1.0)
-
             self.writer.tool_on()
             for x, y in coords[1:]:
                 self.writer.feed(x=x, y=y, f=self.feed_xy)
@@ -252,7 +249,7 @@ class SVGFillCutter(SVGOperation):
 
     def _execute_concentric_pocket(self, polygon: Polygon) -> None:
         """Concentric pocket loop generator for material removal tools (Mills)."""
-        self.writer.add_line(f"\n(--- New Concentric Pocket ---)")
+        self.writer.add_line("\n(--- New Concentric Pocket ---)")
 
         rings = []
         current_poly = polygon
@@ -260,15 +257,15 @@ class SVGFillCutter(SVGOperation):
         while not current_poly.is_empty:
             if isinstance(current_poly, Polygon):
                 rings.append(current_poly)
-            elif hasattr(current_poly, 'geoms'):
-                for geom in current_poly.geoms:
+            else:
+                parts = getattr(current_poly, 'geoms', [])
+                for geom in parts:
                     if isinstance(geom, Polygon):
                         rings.append(geom)
 
             current_poly = current_poly.buffer(-self.stepover,
                                                join_style=JOIN_STYLE_ROUND)
 
-        # Cut from the inside outward to preserve rigidity
         for ring in reversed(rings):
-            tpath = list(ring.exterior.coords)
+            tpath = [(float(x), float(y)) for x, y in ring.exterior.coords]
             self._write_ramped_profile(tpath, is_closed=True)

@@ -1,3 +1,6 @@
+"""
+Core structures and classes for generating and managing G-Code output.
+"""
 from dataclasses import dataclass
 import datetime
 from typing import List, Optional
@@ -17,6 +20,7 @@ class JobConfig:
 
 
 class GCodeWriter:
+    """Handles line-by-line formatting and saving of CNC instructions."""
 
     def __init__(self, tool: ToolStrategy, safe_z: float = 5.0) -> None:
         self.lines: List[str] = []
@@ -24,6 +28,7 @@ class GCodeWriter:
         self.tool: ToolStrategy = tool
 
     def add_line(self, line: str) -> None:
+        """Appends a raw string directly to the G-Code sequence."""
         self.lines.append(line)
 
     def rapid(self,
@@ -57,6 +62,7 @@ class GCodeWriter:
             coords.append(f"F{f}")
         self.add_line(f"G1 {' '.join(coords)}")
 
+    # pylint: disable=too-many-arguments, too-many-positional-arguments
     def arc(self,
             x: float,
             y: float,
@@ -103,7 +109,7 @@ class GCodeWriter:
 
     def save(self, filename: str) -> None:
         """Writes the buffered lines to a file."""
-        with open(filename, 'w') as f:
+        with open(filename, 'w', encoding='utf-8') as f:
             f.write('\n'.join(self.lines))
 
     def tool_on(self) -> None:
