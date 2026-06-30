@@ -61,6 +61,9 @@ def parse_arguments() -> argparse.Namespace:
                         default='auto',
                         choices=['auto', 'hatch', 'crosshatch', 'concentric', 'spiral'],
                         help="Override tool default fill pattern")
+    shared.add_argument('--outline',
+                        action='store_true',
+                        help="Perform a profile cut (outline) in addition to the fill")
 
     mill = subparsers.add_parser('mill',
                                  parents=[shared],
@@ -162,20 +165,34 @@ def main() -> None:
 
     if args.fill:
         logger.info("Generating FILL toolpaths for %s", args.svg)
+        
+        # Save the original compensation setting for the outline pass
+        original_compensation = config.compensation
         config.compensation = 'inside'
-        cutter = SVGFillCutter(writer=writer,
-                               svg_path_file=args.svg,
-                               config=config,
-                               stepover_percent=args.stepover,
-                               fill_angle=args.fill_angle,
-                               fill_method=args.fill_method)
+        
+        fill_cutter = SVGFillCutter(writer=writer,
+                                    svg_path_file=args.svg,
+                                    config=config,
+                                    stepover_percent=args.stepover,
+                                    fill_angle=args.fill_angle,
+                                    fill_method=args.fill_method)
+        fill_cutter.execute()
+
+        # Check if the user also requested an outline
+        if args.outline:
+            logger.info("Generating PROFILE toolpaths for %s", args.svg)
+            config.compensation = original_compensation
+            outline_cutter = SVGProfileCutter(writer=writer,
+                                              svg_path_file=args.svg,
+                                              config=config)
+            outline_cutter.execute()
+
     else:
         logger.info("Generating PROFILE toolpaths for %s", args.svg)
         cutter = SVGProfileCutter(writer=writer,
                                   svg_path_file=args.svg,
                                   config=config)
-
-    cutter.execute()
+        cutter.execute()
 
     writer.build_postamble(operation_name=operation_name)
     writer.save(args.output)
