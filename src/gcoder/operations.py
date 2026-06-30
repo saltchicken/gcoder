@@ -167,10 +167,13 @@ class SVGFillCutter(SVGOperation):
     def __init__(self,
                  stepover_percent: float = 0.5,
                  fill_angle: float = 0.0,
+                 fill_method: str = 'auto',
                  **kwargs) -> None:
         super().__init__(**kwargs)
         self.stepover: float = self.tool_dia * stepover_percent
         self.fill_angle: float = fill_angle
+        # Use tool's default if not overridden by CLI
+        self.fill_method: str = fill_method if fill_method != 'auto' else self.writer.tool.fill_method
 
     def execute(self) -> None:
         doc = Document(self.svg_path_file)
@@ -194,8 +197,10 @@ class SVGFillCutter(SVGOperation):
                 if not isinstance(geom, Polygon):
                     continue
 
-                if self.writer.tool.fill_method == 'hatch':
+                if self.fill_method == 'hatch':
                     self._execute_linear_hatch(geom)
+                elif self.fill_method == 'crosshatch':
+                    self._execute_cross_hatch(geom)
                 else:
                     self._execute_concentric_pocket(geom)
 
@@ -246,6 +251,20 @@ class SVGFillCutter(SVGOperation):
             self.writer.tool_off()
 
         self.writer.rapid(z=self.writer.safe_z)
+
+    def _execute_cross_hatch(self, polygon: Polygon) -> None:
+        """Generates a cross-hatch pattern by running linear hatch twice perpendicularly."""
+        self.writer.add_line("\n(--- Cross Hatch Pass 1 ---)")
+        self._execute_linear_hatch(polygon)
+        
+        self.writer.add_line("\n(--- Cross Hatch Pass 2 ---)")
+        original_angle = self.fill_angle
+        # Temporarily shift the angle by 90 degrees for the perpendicular pass
+        self.fill_angle += 90.0
+        self._execute_linear_hatch(polygon)
+        
+        # Restore the original angle
+        self.fill_angle = original_angle
 
     def _execute_concentric_pocket(self, polygon: Polygon) -> None:
         """Concentric pocket loop generator for material removal tools (Mills)."""

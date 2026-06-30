@@ -52,6 +52,15 @@ def parse_arguments() -> argparse.Namespace:
                         type=float,
                         default=0.4,
                         help="Fill line spacing")
+    shared.add_argument('--fill-angle',
+                        type=float,
+                        default=0.0,
+                        help="Angle for fill pattern in degrees (e.g., 45)")
+    shared.add_argument('--fill-method',
+                        type=str,
+                        default='auto',
+                        choices=['auto', 'hatch', 'crosshatch', 'concentric'],
+                        help="Override tool default fill pattern")
 
     mill = subparsers.add_parser('mill',
                                  parents=[shared],
@@ -157,7 +166,9 @@ def main() -> None:
         cutter = SVGFillCutter(writer=writer,
                                svg_path_file=args.svg,
                                config=config,
-                               stepover_percent=args.stepover)
+                               stepover_percent=args.stepover,
+                               fill_angle=args.fill_angle,
+                               fill_method=args.fill_method)
     else:
         logger.info("Generating PROFILE toolpaths for %s", args.svg)
         cutter = SVGProfileCutter(writer=writer,
