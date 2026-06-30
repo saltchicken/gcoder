@@ -316,6 +316,7 @@ class SVGFillCutter(SVGOperation):
 
         # Target a maximum physical length for each straight line segment (e.g., 0.25mm)
         # This guarantees the outer rings stay just as smooth as the inner rings.
+        # TODO: Modify this from the command line
         max_segment_length = 0.25
         
         # Calculate the angular step required at the maximum radius to hit our target length
