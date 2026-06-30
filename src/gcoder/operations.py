@@ -239,29 +239,3 @@ class SVGFillCutter(SVGOperation):
             tpath = list(ring.exterior.coords)
             self._write_ramped_profile(tpath, is_closed=True)
 
-
-def cut_helical_hole(writer: GCodeWriter, cx: float, cy: float, tool_dia: float, hole_dia: float, depth: float, step_down: float, feed_xy: int, feed_ramp: int) -> None:
-    """Helper for standalone helical holes."""
-    path_radius = (hole_dia - tool_dia) / 2.0
-    start_x = cx + path_radius
-
-    writer.add_line(f"\n(--- Hole at X:{cx:.1f} Y:{cy:.1f} ---)")
-
-    writer.rapid(x=cx, y=cy)
-    writer.rapid(z=1.0)
-
-    writer.feed(x=start_x, y=cy, f=feed_xy)
-    writer.feed(z=0.0, f=feed_ramp)
-
-    current_z = 0.0
-    while current_z > depth:
-        current_z -= step_down
-        if current_z < depth:
-            current_z = depth
-
-        writer.arc(x=start_x, y=cy, i=-path_radius, j=0.0, z=current_z, f=feed_ramp, cw=True)
-
-    writer.arc(x=start_x, y=cy, i=-path_radius, j=0.0, f=feed_xy, cw=True)
-
-    writer.feed(x=cx, y=cy, f=feed_xy)
-    writer.rapid(z=writer.safe_z)
