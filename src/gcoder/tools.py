@@ -63,7 +63,7 @@ class LaserStrategy(ToolStrategy):
     def execute_profile(self, writer: 'GCodeWriter',
                         path: Sequence[Tuple[float, float]], is_closed: bool,
                         feed_xy: int, depth: float, step_down: float) -> None:
-        writer.rapid(z=1.0)
+        writer.rapid(z=0.0)
         self.tool_on(writer)
         for x, y in path[1:]:
             writer.feed(x=x, y=y, f=feed_xy)

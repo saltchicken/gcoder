@@ -144,6 +144,8 @@ def main() -> None:
                            feed_ramp=args.feed_xy,
                            feed_xy=args.feed_xy,
                            compensation=args.compensation)
+        # TODO: Little hack to make laser tool rapid move at Z0.0
+        args.safe_z = 0.0
     elif args.mode == 'pen':
         tool = PenStrategy(pen_z=args.pen_down_z)
         config = JobConfig(tool_dia=0.1,
