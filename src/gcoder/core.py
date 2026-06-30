@@ -2,7 +2,6 @@
 Core structures and classes for generating and managing G-Code output.
 """
 from dataclasses import dataclass
-import datetime
 from typing import List, Optional
 
 from .tools import ToolStrategy
@@ -86,17 +85,14 @@ class GCodeWriter:
                        operation_name: str = "GCode_Operation",
                        tool_dia: float = 3.175) -> None:
         """Inserts the initial setup, tool changes, and safe heights."""
-        current_time = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S.%f")
         self.lines.extend([
-            "(Exported by gcoder)", f"(Output Time:{current_time})",
+            "(Exported by gcoder)",
             f"(META: MODE={self.tool.name.upper()})",
-            f"(META: TOOL_DIA={tool_dia:.3f})", "(Begin preamble)", "G17 G90",
-            "G21", "(Begin operation: Fixture)", "(Path: Fixture)", "G54",
-            "(Finish operation: Fixture)", "(Begin operation: TC: Endmill)",
-            "(Path: TC: Endmill)", "(TC: Endmill)", "(Begin toolchange)",
-            "( M6 T1 )", "(Finish operation: TC: Endmill)",
-            f"(Begin operation: {operation_name})", f"(Path: {operation_name})",
-            f"({operation_name})", f"G0 Z{self.safe_z:.3f}", "G0 X0.000 Y0.000",
+            f"(META: TOOL_DIA={tool_dia:.3f})",
+            "(Begin preamble)", "G17 G90",
+            "G21", "G54",
+            f"(Begin operation: {operation_name})",
+            f"G0 Z{self.safe_z:.3f}", "G0 X0.000 Y0.000",
             "G0 Z0.000", f"G0 Z{self.safe_z:.3f}"
         ])
 
