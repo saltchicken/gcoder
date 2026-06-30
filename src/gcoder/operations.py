@@ -111,7 +111,7 @@ class SVGOperation:
         side = 'left' if self.compensation == 'outside' else 'right'
         return geom.parallel_offset(self.offset_distance, side=side)
 
-    def _write_ramped_profile(self, tpath: Sequence[Tuple[float, float]],
+    def _write_profile(self, tpath: Sequence[Tuple[float, float]],
                               is_closed: bool) -> None:
         """Moves machine to the start coordinate and hands execution to the ToolStrategy."""
         if not tpath:
@@ -163,7 +163,7 @@ class SVGProfileCutter(SVGOperation):
                 else:
                     continue
 
-                self._write_ramped_profile(tpath, is_closed)
+                self._write_profile(tpath, is_closed)
 
 
 class SVGFillCutter(SVGOperation):
@@ -294,7 +294,7 @@ class SVGFillCutter(SVGOperation):
 
         for ring in reversed(rings):
             tpath = [(float(x), float(y)) for x, y in ring.exterior.coords]
-            self._write_ramped_profile(tpath, is_closed=True)
+            self._write_profile(tpath, is_closed=True)
 
     def _execute_spiral(self, polygon: Polygon) -> None:
         """Generates an Archimedean spiral fill pattern from the polygon's centroid."""
@@ -350,9 +350,8 @@ class SVGFillCutter(SVGOperation):
             inter_parts = getattr(intersection, 'geoms', [])
             segments.extend([g for g in inter_parts if isinstance(g, LineString)])
 
-        # Write paths using _write_ramped_profile to ensure proper Z-depth handling
         for line in segments:
             coords = [(float(x), float(y)) for x, y in line.coords]
             if not coords:
                 continue
-            self._write_ramped_profile(coords, is_closed=False)
+            self._write_profile(coords, is_closed=False)
