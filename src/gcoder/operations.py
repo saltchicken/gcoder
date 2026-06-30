@@ -314,8 +314,14 @@ class SVGFillCutter(SVGOperation):
         b = self.stepover / (2.0 * np.pi)
         max_theta = max_r / b
 
-        # Generate smooth curve resolution (~0.1 radians per point)
-        num_points = max(int(max_theta / 0.1), 10)
+        # Target a maximum physical length for each straight line segment (e.g., 0.25mm)
+        # This guarantees the outer rings stay just as smooth as the inner rings.
+        max_segment_length = 0.25
+        
+        # Calculate the angular step required at the maximum radius to hit our target length
+        theta_step = max_segment_length / max_r if max_r > 0 else 0.1
+        
+        num_points = max(int(max_theta / theta_step), 10)
         theta = np.linspace(0, max_theta, num_points)
         r = b * theta
 
@@ -338,16 +344,9 @@ class SVGFillCutter(SVGOperation):
             inter_parts = getattr(intersection, 'geoms', [])
             segments.extend([g for g in inter_parts if isinstance(g, LineString)])
 
-        # Write paths to GCode writer
+        # Write paths using _write_ramped_profile to ensure proper Z-depth handling
         for line in segments:
-            coords = list(line.coords)
+            coords = [(float(x), float(y)) for x, y in line.coords]
             if not coords:
                 continue
-            self.writer.rapid(x=coords[0][0], y=coords[0][1])
-            self.writer.rapid(z=1.0)
-            self.writer.tool_on()
-            for x, y in coords[1:]:
-                self.writer.feed(x=x, y=y, f=self.feed_xy)
-            self.writer.tool_off()
-
-        self.writer.rapid(z=self.writer.safe_z)
+            self._write_ramped_profile(coords, is_closed=False)
