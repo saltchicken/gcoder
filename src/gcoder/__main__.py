@@ -158,7 +158,7 @@ def main() -> None:
         logger.error("Unknown machine mode.")
         sys.exit(1)
 
-    writer = GCodeWriter(tool=tool, clearance_z=args.clearance_z, rapid_z=args.rapid_z)
+    writer = GCodeWriter(tool=tool, clearance_z=args.clearance_z, rapid_z=args.rapid_z, output_file=args.output)
     operation_name = f"DXF_{args.mode.upper()}"
 
     writer.build_preamble(operation_name=operation_name,

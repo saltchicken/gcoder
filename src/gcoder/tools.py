@@ -32,7 +32,6 @@ class ToolStrategy(ABC):
     def tool_off(self, writer: 'GCodeWriter') -> None:
         """Instructs the machine to turn the tool off."""
 
-    # pylint: disable=too-many-arguments, too-many-positional-arguments
     @abstractmethod
     def execute_profile(self, writer: 'GCodeWriter',
                         path: Sequence[Tuple[float, float]], is_closed: bool,
@@ -55,10 +54,11 @@ class LaserStrategy(ToolStrategy):
         return 'hatch'
 
     def tool_on(self, writer: 'GCodeWriter') -> None:
-        writer.add_line(f"M4 S{self.intensity}")
+        # Gscrib abstraction. Lasers usually run M4 (Counter-Clockwise/Dynamic)
+        writer.builder.tool_on("counter", self.intensity)
 
     def tool_off(self, writer: 'GCodeWriter') -> None:
-        writer.add_line("M5")
+        writer.builder.tool_off()
 
     def execute_profile(self, writer: 'GCodeWriter',
                         path: Sequence[Tuple[float, float]], is_closed: bool,
@@ -117,12 +117,12 @@ class MillStrategy(ToolStrategy):
         return 'concentric'
 
     def tool_on(self, writer: 'GCodeWriter') -> None:
-        writer.add_line(f"M3 S{self.intensity}")
+        # Gscrib abstraction for M3
+        writer.builder.tool_on("clockwise", self.intensity)
 
     def tool_off(self, writer: 'GCodeWriter') -> None:
-        writer.add_line("M5")
+        writer.builder.tool_off()
 
-    # pylint: disable=too-many-locals
     def execute_profile(self, writer: 'GCodeWriter',
                         path: Sequence[Tuple[float, float]], is_closed: bool,
                         feed_xy: int, depth: float, step_down: float) -> None:

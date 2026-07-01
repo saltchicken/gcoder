@@ -8,7 +8,7 @@ version = "0.2.0"
 description = "A Python tool for generating CNC G-code from DXF files."
 readme = "README.md"
 requires-python = ">=3.7"
-dependencies = ["numpy", "shapely", "ezdxf"]
+dependencies = ["numpy", "shapely", "ezdxf", "gscrib"]
 
 [project.scripts]
 gcoder = "gcoder.__main__:main"
