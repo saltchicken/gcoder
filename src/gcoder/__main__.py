@@ -7,12 +7,12 @@ import logging
 import os
 import sys
 
-from svgpathtools import svg2paths, Document
+import ezdxf
 
 from .core import GCodeWriter
 from .core import JobConfig
-from .operations import SVGFillCutter
-from .operations import SVGProfileCutter
+from .operations import DXFFillCutter
+from .operations import DXFProfileCutter
 from .tools import LaserStrategy
 from .tools import MillStrategy
 from .tools import PenStrategy
@@ -25,16 +25,16 @@ logger = logging.getLogger(__name__)
 def parse_arguments() -> argparse.Namespace:
     """Parses command-line arguments for the application."""
     parser = argparse.ArgumentParser(
-        description="Generate G-Code toolpaths from SVGs.")
+        description="Generate G-Code toolpaths from DXF files.")
     subparsers = parser.add_subparsers(dest='mode',
                                        required=True,
                                        help="Target machine type")
 
     shared = argparse.ArgumentParser(add_help=False)
-    shared.add_argument('--svg',
+    shared.add_argument('--dxf',
                         type=str,
                         required=True,
-                        help="Path to input SVG")
+                        help="Path to input DXF")
     shared.add_argument('--output',
                         type=str,
                         default="output.nc",
@@ -124,8 +124,8 @@ def main() -> None:
     """Main execution block for parsing arguments and initiating generation."""
     args = parse_arguments()
 
-    if not os.path.exists(args.svg):
-        logger.error("SVG file not found at '%s'", args.svg)
+    if not os.path.exists(args.dxf):
+        logger.error("DXF file not found at '%s'", args.dxf)
         sys.exit(1)
 
     if args.mode == 'mill':
@@ -159,61 +159,50 @@ def main() -> None:
         sys.exit(1)
 
     writer = GCodeWriter(tool=tool, clearance_z=args.clearance_z, rapid_z=args.rapid_z)
-    operation_name = f"SVG_{args.mode.upper()}"
+    operation_name = f"DXF_{args.mode.upper()}"
 
     writer.build_preamble(operation_name=operation_name,
                           tool_dia=config.tool_dia)
     
-    logger.info("Processing SVG: %s in %s mode", args.svg, args.mode.upper())
+    logger.info("Processing DXF: %s in %s mode", args.dxf, args.mode.upper())
 
-    # 1. Use Document to preserve all group transformations (rotations/translations)
-    doc = Document(args.svg)
-    transformed_paths = doc.paths()
+    try:
+        doc = ezdxf.readfile(args.dxf)
+        msp = doc.modelspace()
+    except IOError:
+        logger.error("Not a DXF file or a generic I/O error.")
+        sys.exit(1)
+    except ezdxf.DXFStructureError:
+        logger.error("Invalid or corrupted DXF file.")
+        sys.exit(1)
 
-    # 2. Use svg2paths strictly to extract the raw XML attributes in document order
-    _, attributes = svg2paths(args.svg)
-
-    profile_cutter = SVGProfileCutter(writer=writer, svg_path_file=args.svg, config=config)
-    fill_cutter = SVGFillCutter(writer=writer,
-                                svg_path_file=args.svg,
+    profile_cutter = DXFProfileCutter(writer=writer, config=config)
+    fill_cutter = DXFFillCutter(writer=writer,
                                 config=config,
                                 stepover_percent=args.stepover,
                                 fill_angle=args.fill_angle,
                                 fill_method=args.fill_method)
 
-    # 3. Zip them together so we evaluate the transformed path alongside its fill property
-    for path, attrs in zip(transformed_paths, attributes):
-        if len(path) == 0:
-            continue
-
-        # Check for direct attribute first
-        fill_val = attrs.get('fill', '').strip().lower()
+    # Process all entities in modelspace
+    for entity in msp:
+        layer_name = entity.dxf.layer.lower() if hasattr(entity.dxf, 'layer') else ''
         
-        # If not found, check inside the 'style' attribute
-        if not fill_val:
-            style = attrs.get('style', '').strip().lower()
-            for part in style.split(';'):
-                if ':' in part:
-                    key, val = part.split(':', 1)
-                    if key.strip() == 'fill':
-                        fill_val = val.strip()
-                        break
+        # Determine operation by layer name convention
+        is_fill_layer = any(keyword in layer_name for keyword in ['fill', 'hatch', 'pocket'])
 
-        has_fill = bool(fill_val and fill_val != 'none')
-
-        if has_fill and path.isclosed():
-            logger.info("Entity has fill property '%s' -> Generating FILL toolpath", fill_val)
+        if is_fill_layer:
+            logger.info("Entity on layer '%s' -> Generating FILL toolpath", layer_name)
             original_compensation = config.compensation
             config.compensation = 'inside'
             fill_cutter.offset_distance = config.tool_dia / 2.0
             fill_cutter.compensation = config.compensation
             
-            fill_cutter.process_single_path(path)
+            fill_cutter.process_entity(entity)
             
             config.compensation = original_compensation
         else:
-            logger.info("Entity has no fill -> Generating PROFILE toolpath")
-            profile_cutter.process_single_path(path)
+            logger.info("Entity on layer '%s' -> Generating PROFILE toolpath", layer_name)
+            profile_cutter.process_entity(entity)
 
     # Retract to clearance at the very end
     writer.add_line("\n( Retract to clearance height before finishing )")
@@ -222,7 +211,7 @@ def main() -> None:
     writer.build_postamble(operation_name=operation_name)
     writer.save(args.output)
 
-    logger.info("Successfully processed profile. Saved G-code to: %s", args.output)
+    logger.info("Successfully processed DXF. Saved G-code to: %s", args.output)
 
 
 if __name__ == "__main__":

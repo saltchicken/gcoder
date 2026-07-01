@@ -1,15 +1,14 @@
 """
-Defines geometrical operations to map SVG paths into compensated CNC trajectories.
+Defines geometrical operations to map DXF entities into compensated CNC trajectories.
 """
 from typing import List, Optional, Sequence, Tuple
 
 import numpy as np
+from ezdxf.path import make_path
 from shapely.affinity import rotate
 from shapely.geometry import LineString
 from shapely.geometry import Polygon
 from shapely.geometry.base import BaseGeometry
-from svgpathtools import Document
-from svgpathtools import Path
 
 from .core import GCodeWriter
 from .core import JobConfig
@@ -17,18 +16,15 @@ from .core import JobConfig
 JOIN_STYLE_ROUND = 'round'
 
 
-class SVGOperation:
+class DXFOperation:
     """
-    Abstract base class for all SVG-to-GCode operations.
-    Handles document parsing, center calculation, coordinate mapping,
-    and tool compensation geometry.
+    Abstract base class for all DXF-to-GCode operations.
+    Handles coordinate mapping and tool compensation geometry.
     """
 
     # pylint: disable=too-many-instance-attributes
-    def __init__(self, writer: GCodeWriter, svg_path_file: str,
-                 config: JobConfig) -> None:
+    def __init__(self, writer: GCodeWriter, config: JobConfig) -> None:
         self.writer: GCodeWriter = writer
-        self.svg_path_file: str = svg_path_file
 
         self.compensation: str = config.compensation
         self.tool_dia: float = config.tool_dia
@@ -38,58 +34,38 @@ class SVGOperation:
         self.feed_xy: int = config.feed_xy
         self.feed_ramp: Optional[int] = config.feed_ramp
 
-        self.center_x: float = 0.0
-        self.center_y: float = 0.0
-
-    def execute(self) -> None:
+    def process_entity(self, entity) -> None:
         """Abstract execution method to be overridden by subclasses."""
         raise NotImplementedError(
-            "Subclasses must implement the execute method.")
+            "Subclasses must implement the process_entity method.")
 
-    def _calculate_svg_center(self, doc: Document) -> None:
-        """Determines the center of the SVG document from viewBox or dimensions."""
-        if doc.tree is None:
-            return
+    def _extract_paths(self, entity, flatten_distance: float = 0.01) -> List[Tuple[List[Tuple[float, float]], bool]]:
+        """
+        Extracts geometric paths from a DXF entity and flattens curves.
+        Returns a list of tuples: (points_list, is_closed_boolean)
+        """
+        try:
+            # make_path generates a single Path object for lines, polylines, arcs, etc.
+            paths = [make_path(entity)]
+        except Exception:
+            # Ignore unsupported entities (Text, Dimensions, Viewports)
+            return []
 
-        root = doc.tree.getroot()
-        if root is None:
-            return
+        extracted = []
+        for p in paths:
+            # Flatten splines/arcs into line segments for processing
+            points = [(v.x, v.y) for v in p.flattening(distance=flatten_distance)]
+            if len(points) < 2:
+                continue
+            
+            # ezdxf paths track their own closed state
+            is_closed = p.is_closed
+            if is_closed and points[0] != points[-1]:
+                points.append(points[0])
 
-        viewbox_str = root.get('viewBox')
+            extracted.append((points, is_closed))
 
-        if viewbox_str is not None:
-            vb_parts = viewbox_str.replace(',', ' ').split()
-            self.center_x = float(vb_parts[0]) + (float(vb_parts[2]) / 2.0)
-            self.center_y = float(vb_parts[1]) + (float(vb_parts[3]) / 2.0)
-        else:
-            w_val = root.get('width', '100')
-            h_val = root.get('height', '100')
-            w_str = str(w_val).replace('mm', '').replace('px',
-                                                         '').replace('%', '')
-            h_str = str(h_val).replace('mm', '').replace('px',
-                                                         '').replace('%', '')
-            self.center_x = float(w_str) / 2.0
-            self.center_y = float(h_str) / 2.0
-
-    def _extract_and_flip_points(self,
-                                 path: Path,
-                                 steps: int = 50) -> List[Tuple[float, float]]:
-        """Extracts points from an SVG path and flips the Y axis to match CNC coordinates."""
-        points: List[Tuple[float, float]] = []
-        for segment in path:
-            for t in np.linspace(0, 1, steps, endpoint=False):
-                p = segment.point(t)
-                flipped_y = (2.0 * self.center_y) - p.imag
-                points.append((p.real, flipped_y))
-
-        if path.isclosed():
-            p_end = path[-1].point(1)
-            flipped_y_end = (2.0 * self.center_y) - p_end.imag
-            points.append((p_end.real, flipped_y_end))
-
-        geom = LineString(points)
-        simplified_geom = geom.simplify(0.01, preserve_topology=True)
-        return list(simplified_geom.coords)
+        return extracted
 
     def _apply_tool_compensation(self, points: List[Tuple[float, float]],
                                  is_closed: bool) -> BaseGeometry:
@@ -98,7 +74,7 @@ class SVGOperation:
             geom = Polygon(points)
             if self.compensation == 'outside':
                 return geom.buffer(self.offset_distance,
-                                    join_style=JOIN_STYLE_ROUND)
+                                   join_style=JOIN_STYLE_ROUND)
             return geom.buffer(-self.offset_distance,
                                join_style=JOIN_STYLE_ROUND)
 
@@ -129,50 +105,33 @@ class SVGOperation:
                                          step_down=self.step_down)
 
 
-class SVGProfileCutter(SVGOperation):
-    """Generates continuous geometric toolpaths tracing the contours of the SVG paths."""
+class DXFProfileCutter(DXFOperation):
+    """Generates continuous geometric toolpaths tracing the contours of the DXF paths."""
 
-    def execute(self) -> None:
-        doc = Document(self.svg_path_file)
-        paths: List[Path] = doc.paths()
-        self._calculate_svg_center(doc)
+    def process_entity(self, entity) -> None:
+        """Processes an isolated DXF entity for profile trimming operations."""
+        paths_data = self._extract_paths(entity)
 
-        for path in paths:
-            self.process_single_path(path)
+        for points, is_closed in paths_data:
+            offset_geom = self._apply_tool_compensation(points, is_closed)
 
-    def process_single_path(self, path: Path) -> None:
-        """Processes an isolated path entity for profile trimming operations."""
-        if len(path) == 0:
-            return
-
-        if self.center_x == 0.0 and self.center_y == 0.0:
-            doc = Document(self.svg_path_file)
-            self._calculate_svg_center(doc)
-
-        points = self._extract_and_flip_points(path)
-        if len(points) < 2:
-            return
-
-        is_closed = path.isclosed()
-        offset_geom = self._apply_tool_compensation(points, is_closed)
-
-        if offset_geom.is_empty:
-            return
-
-        geoms = getattr(offset_geom, 'geoms', [offset_geom])
-
-        for g in geoms:
-            if isinstance(g, Polygon):
-                tpath = [(float(x), float(y)) for x, y in g.exterior.coords]
-            elif isinstance(g, LineString):
-                tpath = [(float(x), float(y)) for x, y in g.coords]
-            else:
+            if offset_geom.is_empty:
                 continue
 
-            self._write_profile(tpath, is_closed)
+            geoms = getattr(offset_geom, 'geoms', [offset_geom])
+
+            for g in geoms:
+                if isinstance(g, Polygon):
+                    tpath = [(float(x), float(y)) for x, y in g.exterior.coords]
+                elif isinstance(g, LineString):
+                    tpath = [(float(x), float(y)) for x, y in g.coords]
+                else:
+                    continue
+
+                self._write_profile(tpath, is_closed)
 
 
-class SVGFillCutter(SVGOperation):
+class DXFFillCutter(DXFOperation):
     """Generates geometric interior fill strategies determined by the assigned ToolStrategy."""
 
     def __init__(self,
@@ -185,44 +144,38 @@ class SVGFillCutter(SVGOperation):
         self.fill_angle: float = fill_angle
         self.fill_method: str = fill_method if fill_method != 'auto' else self.writer.tool.fill_method
 
-    def execute(self) -> None:
-        doc = Document(self.svg_path_file)
-        self._calculate_svg_center(doc)
+    def process_entity(self, entity) -> None:
+        """Processes an isolated DXF entity for internal fill profiling operations."""
+        paths_data = self._extract_paths(entity)
 
-        for path in doc.paths():
-            self.process_single_path(path)
-
-    def process_single_path(self, path: Path) -> None:
-        """Processes an isolated path entity for internal fill profiling operations."""
-        if len(path) == 0 or not path.isclosed():
-            return
-
-        if self.center_x == 0.0 and self.center_y == 0.0:
-            doc = Document(self.svg_path_file)
-            self._calculate_svg_center(doc)
-
-        points = self._extract_and_flip_points(path)
-        base_polygon = Polygon(points)
-        working_polygon = base_polygon.buffer(-self.offset_distance,
-                                              join_style=JOIN_STYLE_ROUND)
-
-        if working_polygon.is_empty:
-            return
-
-        geoms = getattr(working_polygon, 'geoms', [working_polygon])
-
-        for geom in geoms:
-            if not isinstance(geom, Polygon):
+        for points, is_closed in paths_data:
+            if not is_closed:
                 continue
 
-            if self.fill_method == 'hatch':
-                self._execute_linear_hatch(geom)
-            elif self.fill_method == 'crosshatch':
-                self._execute_cross_hatch(geom)
-            elif self.fill_method == 'spiral':
-                self._execute_spiral(geom)
-            else:
-                self._execute_concentric_pocket(geom)
+            base_polygon = Polygon(points)
+            if not base_polygon.is_valid:
+                base_polygon = base_polygon.buffer(0)
+                
+            working_polygon = base_polygon.buffer(-self.offset_distance,
+                                                  join_style=JOIN_STYLE_ROUND)
+
+            if working_polygon.is_empty:
+                continue
+
+            geoms = getattr(working_polygon, 'geoms', [working_polygon])
+
+            for geom in geoms:
+                if not isinstance(geom, Polygon):
+                    continue
+
+                if self.fill_method == 'hatch':
+                    self._execute_linear_hatch(geom)
+                elif self.fill_method == 'crosshatch':
+                    self._execute_cross_hatch(geom)
+                elif self.fill_method == 'spiral':
+                    self._execute_spiral(geom)
+                else:
+                    self._execute_concentric_pocket(geom)
 
     # pylint: disable=too-many-locals
     def _execute_linear_hatch(self, polygon: Polygon) -> None:
