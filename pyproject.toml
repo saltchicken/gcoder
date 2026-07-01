@@ -5,10 +5,10 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "gcoder"
 version = "0.2.0"
-description = "A Python tool for generating CNC G-code from DXF files."
+description = "A Python tool for generating CNC G-code outlines from DXF files using a pen/drag tool."
 readme = "README.md"
 requires-python = ">=3.7"
-dependencies = ["numpy", "shapely", "ezdxf", "gscrib"]
+dependencies = ["ezdxf", "gscrib"]
 
 [project.scripts]
 gcoder = "gcoder.__main__:main"

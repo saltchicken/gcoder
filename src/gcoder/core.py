@@ -1,33 +1,20 @@
 """
-Core structures and classes for generating and managing G-Code output.
+Core structures and classes for generating and managing G-Code output for pen plotting.
 """
-from dataclasses import dataclass
-from typing import Optional
+from typing import Optional, Sequence, Tuple
 
+from ezdxf.path import make_path
 from gscrib import GCodeBuilder
-
-from .tools import ToolStrategy
-
-
-@dataclass
-class JobConfig:
-    """Unified configuration mapping for all tool types."""
-    tool_dia: float
-    depth: float
-    step_down: float
-    feed_ramp: int
-    feed_xy: int
-    compensation: str
 
 
 class GCodeWriter:
     """Handles line-by-line formatting and saving of CNC instructions using Gscrib."""
 
-    def __init__(self, tool: ToolStrategy, output_file: str, clearance_z: float = 5.0, rapid_z: float = 1.0) -> None:
+    def __init__(self, output_file: str, clearance_z: float = 5.0, rapid_z: float = 1.0, pen_down_z: float = -1.0) -> None:
         self.builder = GCodeBuilder(output=output_file)
         self.clearance_z: float = clearance_z
         self.rapid_z: float = rapid_z
-        self.tool: ToolStrategy = tool
+        self.pen_z: float = pen_down_z
         self.current_f: Optional[int] = None
 
     def add_line(self, line: str) -> None:
@@ -37,10 +24,8 @@ class GCodeWriter:
             return
             
         if line.startswith('(') and line.endswith(')'):
-            # Pass comments straight to gscrib without the parens
             self.builder.comment(line[1:-1].strip(' -'))
         else:
-            # Fallback for arbitrary strings
             if hasattr(self.builder, 'command'):
                 self.builder.command(line)
             else:
@@ -77,17 +62,13 @@ class GCodeWriter:
         if kwargs:
             self.builder.move(**kwargs)
 
-    def build_preamble(self,
-                       operation_name: str = "GCode_Operation",
-                       tool_dia: float = 3.175) -> None:
+    def build_preamble(self, operation_name: str = "GCode_Operation") -> None:
         """Inserts the initial setup, coordinate systems, and tool metadata."""
         self.builder.comment("Exported by gcoder via Gscrib")
-        self.builder.comment(f"META: MODE={self.tool.name.upper()}")
-        self.builder.comment(f"META: TOOL_DIA={tool_dia:.3f}")
+        self.builder.comment("META: MODE=PEN")
         self.builder.comment("Begin preamble")
         
-        # Core configuration via gscrib
-        self.builder.set_plane("xy")  # <--- Changed to lowercase 'xy'
+        self.builder.set_plane("xy")
         self.builder.absolute_mode()
         
         if hasattr(self.builder, 'set_length_units'):
@@ -100,30 +81,76 @@ class GCodeWriter:
         self.builder.comment(f"Finish operation: {operation_name}")
         self.builder.comment("Begin postamble")
         
-        self.tool_off()
-        self.builder.set_plane("xy")  # <--- Changed to lowercase 'xy'
+        self.pen_up()
+        self.builder.set_plane("xy")
         self.builder.absolute_mode()
         self.builder.stop()
 
     def save(self, filename: str) -> None:
         """Writes the buffered lines to a file."""
-        if hasattr(self.builder, 'write') and callable(self.builder.write):
-            try:
-                self.builder.write(filename)
-            except TypeError:
-                # Fallback if the build method just returns the final string
-                with open(filename, 'w', encoding='utf-8') as f:
-                    f.write(self.builder.write())
-        elif hasattr(self.builder, 'build'):
-            with open(filename, 'w', encoding='utf-8') as f:
-                f.write(self.builder.build())
-        else:
+        if hasattr(self.builder, 'flush'):
             self.builder.flush()
 
-    def tool_on(self) -> None:
-        """Activates the tool using the assigned strategy."""
-        self.tool.tool_on(self)
+    def pen_down(self) -> None:
+        """Activates the tool by lowering it."""
+        self.rapid(z=self.pen_z)
 
-    def tool_off(self) -> None:
-        """Deactivates the tool using the assigned strategy."""
-        self.tool.tool_off(self)
+    def pen_up(self) -> None:
+        """Deactivates the tool by raising it."""
+        self.rapid(z=self.rapid_z)
+
+    def execute_profile(self, path: Sequence[Tuple[float, float]], feed_xy: int) -> None:
+        """Executes the toolpath trace using dragging mechanics."""
+        if not path:
+            return
+
+        self.add_line("\n(--- New Outline Profile ---)")
+        start_x, start_y = path[0]
+        
+        self.rapid(z=self.clearance_z)
+        self.rapid(x=start_x, y=start_y)
+        self.rapid(z=self.rapid_z)
+        
+        self.pen_down()
+        for x, y in path[1:]:
+            self.feed(x=x, y=y, f=feed_xy)
+            
+        self.pen_up()
+        self.rapid(z=self.rapid_z)
+
+
+class DXFOutlineCutter:
+    """Generates continuous geometric toolpaths tracing the contours of the DXF paths directly."""
+    
+    def __init__(self, writer: GCodeWriter, feed_xy: int) -> None:
+        self.writer = writer
+        self.feed_xy = feed_xy
+
+    def process_entity(self, entity, flatten_distance: float = 0.01) -> None:
+        """Processes an isolated DXF entity to generate an outline."""
+        paths = []
+        
+        # ezdxf.path.make_path fails for complex entities (like LWPOLYLINEs or paths). 
+        # We need to fall back to make_paths_from_entity for broader support.
+        try:
+            from ezdxf.path import make_paths_from_entity
+            paths = list(make_paths_from_entity(entity))
+        except Exception:
+            pass
+            
+        if not paths:
+            try:
+                paths = [make_path(entity)]
+            except Exception:
+                # Completely unsupported entity type
+                return
+
+        for p in paths:
+            points = [(float(v.x), float(v.y)) for v in p.flattening(distance=flatten_distance)]
+            if len(points) < 2:
+                continue
+            
+            if p.is_closed and points[0] != points[-1]:
+                points.append(points[0])
+
+            self.writer.execute_profile(points, self.feed_xy)
